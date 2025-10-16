@@ -2,7 +2,7 @@
 # This file is used by the notebooks
 
 # Unity Catalog settings
-catalog: "apscat"  # ⚠️ CHANGE to your catalog name
+catalog: "your_catalog_name"  # ⚠️ CHANGE THIS to your actual catalog name
 schema: "finance"
 
 # Instructions:

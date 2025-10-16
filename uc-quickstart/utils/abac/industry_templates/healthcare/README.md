@@ -64,7 +64,7 @@ databricks auth login --profile DEFAULT
 ```yaml
 databricks_profile: "DEFAULT"
 warehouse_id: "862f1d757f0424f7"
-catalog: "apscat"
+catalog: "your_catalog_name"
 schema: "healthcare"
 ```
 
