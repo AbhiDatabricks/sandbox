@@ -1,0 +1,20 @@
+-- TELCO ABAC FUNCTIONS
+USE CATALOG apscat; USE SCHEMA telco;
+
+CREATE OR REPLACE FUNCTION mask_phone_number(phone STRING) RETURNS STRING
+COMMENT 'Phone masking' RETURN CASE WHEN phone IS NULL THEN phone ELSE CONCAT('XXX-XXX-', RIGHT(phone, 4)) END;
+
+CREATE OR REPLACE FUNCTION mask_imei(imei STRING) RETURNS STRING
+COMMENT 'IMEI last 4' RETURN CASE WHEN imei IS NULL THEN imei ELSE CONCAT('***********', RIGHT(imei, 4)) END;
+
+CREATE OR REPLACE FUNCTION mask_usage_bucket(gb DECIMAL(10,2)) RETURNS STRING
+COMMENT 'Usage ranges' RETURN CASE WHEN gb IS NULL THEN 'Unknown' WHEN gb < 1 THEN '<1GB'
+WHEN gb < 5 THEN '1-5GB' WHEN gb < 10 THEN '5-10GB' ELSE '10GB+' END;
+
+CREATE OR REPLACE FUNCTION mask_subscriber_id_hash(id STRING) RETURNS STRING
+COMMENT 'Deterministic sub ID' RETURN CONCAT('SUB_', SUBSTRING(SHA2(id, 256), 1, 12));
+
+CREATE OR REPLACE FUNCTION mask_ip_address(ip STRING) RETURNS STRING
+COMMENT 'IP masking' RETURN CASE WHEN ip IS NULL THEN ip ELSE CONCAT(SPLIT(ip, '\\.')[0], '.', SPLIT(ip, '\\.')[1], '.', SPLIT(ip, '\\.')[2], '.***') END;
+
+SELECT '✅ Telco functions created!' AS status;

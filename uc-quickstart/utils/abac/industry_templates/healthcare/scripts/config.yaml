@@ -1,0 +1,16 @@
+# Healthcare ABAC Demo Configuration
+
+# Databricks connection
+databricks_profile: "DEFAULT"  # Options: DEFAULT, FIELDENG, AZURE1, etc.
+warehouse_id: "862f1d757f0424f7"  # SQL Warehouse ID
+
+# Unity Catalog settings
+catalog: "apscat"
+schema: "healthcare"
+
+# File paths (relative to this config file)
+# Note: Schema already exists, so we only deploy functions and tests
+sql_files:
+  - "0.1healthcare_abac_functions_updated.sql"
+  - "6.TestHealthcareData_Simple.sql"
+

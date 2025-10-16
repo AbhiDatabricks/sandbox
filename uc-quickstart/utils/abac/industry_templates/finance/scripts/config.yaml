@@ -1,0 +1,18 @@
+# Finance ABAC Demo Configuration
+
+# Databricks connection
+databricks_profile: "DEFAULT"  # Options: DEFAULT, FIELDENG, AZURE1, etc.
+warehouse_id: "862f1d757f0424f7"  # SQL Warehouse ID
+
+# Unity Catalog settings
+catalog: "apscat"
+schema: "finance"
+
+# File paths (relative to this config file)
+sql_files:
+  - "0.1finance_abac_functions.sql"
+  - "0.2finance_database_schema.sql"
+  - "0.3finance_extended_tables.sql"
+  - "0.4apply_finance_tags.sql"
+  - "6.TestFinanceData_Simple.sql"
+

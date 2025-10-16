@@ -1,0 +1,13 @@
+# Government & Public Services ABAC Demo Configuration
+
+databricks_profile: "DEFAULT"
+warehouse_id: "862f1d757f0424f7"
+catalog: "apscat"
+schema: "government"
+
+sql_files:
+  - "0.1government_abac_functions.sql"
+  - "0.2government_database_schema.sql"
+  - "0.3government_extended_tables.sql"
+  - "6.TestGovernmentData_Simple.sql"
+

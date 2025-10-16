@@ -1,0 +1,11 @@
+# Finance ABAC Demo Configuration
+# This file is used by the notebooks
+
+# Unity Catalog settings
+catalog: "apscat"  # ⚠️ CHANGE to your catalog name
+schema: "finance"
+
+# Instructions:
+# 1. Update the 'catalog' value above to match your Unity Catalog name
+# 2. The notebooks will automatically read these values
+# 3. No need to edit each notebook individually!

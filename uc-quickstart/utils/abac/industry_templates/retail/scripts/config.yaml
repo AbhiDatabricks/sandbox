@@ -1,0 +1,13 @@
+# Retail & E-Commerce ABAC Demo Configuration
+
+databricks_profile: "DEFAULT"
+warehouse_id: "862f1d757f0424f7"
+catalog: "apscat"
+schema: "retail"
+
+sql_files:
+  - "0.1retail_abac_functions.sql"
+  - "0.2retail_database_schema.sql"
+  - "0.3retail_extended_tables.sql"
+  - "6.TestRetailData_Simple.sql"
+

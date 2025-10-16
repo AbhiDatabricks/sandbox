@@ -1,0 +1,13 @@
+# Telecommunications ABAC Demo Configuration
+
+databricks_profile: "DEFAULT"
+warehouse_id: "862f1d757f0424f7"
+catalog: "apscat"
+schema: "telco"
+
+sql_files:
+  - "0.1telco_abac_functions.sql"
+  - "0.2telco_database_schema.sql"
+  - "0.3telco_extended_tables.sql"
+  - "6.TestTelcoData_Simple.sql"
+
