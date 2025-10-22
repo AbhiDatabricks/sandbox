@@ -183,8 +183,8 @@ All notebooks will automatically use these settings.
 
 ### 📚 References:
 - [PCI-DSS Standards](https://www.pcisecuritystandards.org/)
-- [Unity Catalog ABAC Documentation](https://docs.databricks.com/en/data-governance/unity-catalog/attribute-based-access-control.html)
-- [Databricks Financial Services Solutions](https://www.databricks.com/solutions/financial-services)
+- [Unity Catalog ABAC Documentation](https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/)
+- [Databricks Financial Services Solutions](https://www.databricks.com/solutions/industries/financial-services)
 
 ---
 
