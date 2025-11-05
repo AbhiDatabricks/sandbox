@@ -8,8 +8,8 @@ CREATE OR REPLACE FUNCTION mask_policy_number_last4(policy STRING) RETURNS STRIN
 COMMENT 'Policy last 4' RETURN CASE WHEN policy IS NULL THEN policy ELSE CONCAT('****', RIGHT(policy, 4)) END;
 
 CREATE OR REPLACE FUNCTION mask_claim_amount_bucket(amt DECIMAL(12,2)) RETURNS STRING
-COMMENT 'Claim ranges' RETURN CASE WHEN amt IS NULL THEN 'Unknown' WHEN amt < 1000 THEN '$0-$1K'
-WHEN amt < 5000 THEN '$1K-$5K' WHEN amt < 10000 THEN '$5K-$10K' ELSE '$10K+' END;
+COMMENT 'Claim ranges' RETURN CASE WHEN amt IS NULL THEN 'Unknown' WHEN amt < 1000 THEN '\$0-\$1K'
+WHEN amt < 5000 THEN '\$1K-\$5K' WHEN amt < 10000 THEN '\$5K-\$10K' ELSE '\$10K+' END;
 
 CREATE OR REPLACE FUNCTION mask_policyholder_id_hash(id STRING) RETURNS STRING
 COMMENT 'Deterministic' RETURN CONCAT('POL_', SUBSTRING(SHA2(id, 256), 1, 12));
