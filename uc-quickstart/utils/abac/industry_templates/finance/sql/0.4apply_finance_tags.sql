@@ -5,19 +5,6 @@
 USE CATALOG apscat;
 USE SCHEMA finance;
 
--- Create tag policies
-CREATE TAG POLICY IF NOT EXISTS pii_level 
-COMMENT 'PII sensitivity level' 
-ALLOWED VALUES ['High', 'Medium', 'Low'];
-
-CREATE TAG POLICY IF NOT EXISTS pci_compliance 
-COMMENT 'PCI-DSS compliance requirement' 
-ALLOWED VALUES ['Required', 'Not_Required'];
-
-CREATE TAG POLICY IF NOT EXISTS data_classification 
-COMMENT 'Data classification level' 
-ALLOWED VALUES ['Confidential', 'Internal', 'Public'];
-
 -- =============================================
 -- TAGS FOR: customers (PII data)
 -- =============================================
