@@ -28,8 +28,6 @@ A comprehensive ABAC (Attribute-Based Access Control) demonstration for the fina
 
 **Deployment Options**
 - Interactive Notebooks (4 .ipynb files) - Recommended
-- SQL Files (for direct import to Databricks)
-- Python Automation (`scripts/execute_sql_configurable.py`)
 - Configuration file (`config.yaml`)
 
 ### 🎭 Masking Examples:
@@ -154,21 +152,12 @@ GROUP BY merchant_category, mask_amount_bucket(amount);
 ### 📁 File Structure:
 ```
 finance/
-├── config.yaml                           # Configuration (edit this!)
-├── 1_Create_Functions.ipynb             # Notebook: Create masking functions
-├── 2_Create_Schema.ipynb                # Notebook: Create schema & tables
-├── 3_Create_Extended_Tables.ipynb       # Notebook: Add supplementary tables
-├── 4_Test_Masking.ipynb                 # Notebook: Test all functions
+├── config.yaml                          # Configuration (edit this!)
+├── 1_Create_Functions.ipynb             # Notebook: Create masking + filtering functions
+├── 2_Create_Tables.ipynb                # Notebook: Create schema & tables
+├── 3_Setup_Tagging.ipynb                # Notebook: Define governed tags
+├── 4_Test_ABAC_Policies.ipynb           # Notebook: Test functions through ABAC policies
 ├── README.md                            # This file
-├── sql/                                 # SQL source files
-│   ├── 0.1finance_abac_functions.sql
-│   ├── 0.2finance_database_schema.sql
-│   ├── 0.3finance_extended_tables.sql
-│   ├── 0.4apply_finance_tags.sql
-│   └── 6.TestFinanceData_Simple.sql
-└── scripts/                             # Automation scripts
-    ├── config.yaml
-    └── execute_sql_configurable.py
 ```
 
 ### 🔧 Configuration:
