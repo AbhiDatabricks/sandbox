@@ -27,7 +27,7 @@ A comprehensive ABAC (Attribute-Based Access Control) demonstration for the fina
 - Plus 4 row filter functions (business hours, fraud, regional)
 
 **Deployment Options**
-- Interactive Notebooks (4 .ipynb files) - Recommended
+- Interactive Notebooks (4 .ipynb files)
 - Configuration file (`config.yaml`)
 
 ### 🎭 Masking Examples:
@@ -37,7 +37,7 @@ Credit Card:  4532-1234-5678-9010 → ****-****-****-9010 (PCI-DSS)
 Account:      1001234567 → ****4567
 SSN:          123-45-6789 → XXX-XX-6789
 Email:        john.smith@email.com → ****@email.com
-Phone:        555-0101 → XXXX0101
+Phone:        395-555-0101 → XXXX0101
 Amount:       $8750.80 → $5K-$10K (bucket)
 Customer ID:  C-1001 → CUST_abc123... (deterministic for joins)
 IP Address:   192.168.1.100 → 192.168.1.***
@@ -76,20 +76,11 @@ Total Records: 120
 
 ### 🚀 Quick Start:
 
-**Option 1: Using Notebooks (Recommended)**
+**Using Notebooks**
 1. Import the 4 `.ipynb` files to Databricks
 2. Edit `config.yaml` to set your catalog name
 3. Run notebooks 1 → 2 → 3 → 4
 
-**Option 2: Using Python Automation**
-```bash
-cd finance/scripts
-# Edit config.yaml first
-python3 execute_sql_configurable.py
-```
-
-**Option 3: Direct SQL Import**
-Import SQL files from `sql/` folder to Databricks as SQL notebooks
 
 ### 🎓 Finance-Specific Use Cases:
 
