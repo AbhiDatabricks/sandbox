@@ -36,7 +36,8 @@ A Databricks App that provides a simple UI to deploy ABAC (Attribute-Based Acces
 
 1. Databricks workspace with Apps enabled
 2. Unity Catalog configured
-3. Permissions to create functions in target catalog/schema
+3. **SQL Warehouse** - App will use a SQL warehouse resource (configured at deployment)
+4. Permissions to create functions in target catalog/schema
 
 ### Deployment Steps
 
@@ -56,7 +57,13 @@ A Databricks App that provides a simple UI to deploy ABAC (Attribute-Based Acces
      --source-code-path /Workspace/Users/<your-email>/apps/abac-deployer
    ```
 
-3. **Alternative: Use Databricks CLI**:
+3. **Configure SQL Warehouse Resource**:
+   - During app creation, Databricks will prompt you to select a SQL warehouse
+   - Choose an existing warehouse or let Databricks provision one
+   - The app will automatically use this warehouse (via the `sql_warehouse` resource in `app.yaml`)
+   - No need to hard-code warehouse IDs! 🎉
+
+4. **Alternative: Use Databricks CLI**:
    ```bash
    # Create workspace directory
    databricks workspace mkdirs /Workspace/Users/<your-email>/apps/abac-deployer
@@ -111,22 +118,69 @@ industry_templates_app/
 ## Requirements
 
 - `gradio` - For the web UI
-- `pyspark` - Automatically available in Databricks Apps
+- `databricks-sdk` - For SQL warehouse execution
+- SQL Warehouse - For running queries (more scalable than Spark session)
+
+## Architecture
+
+This app follows the **Databricks Apps resource pattern**:
+
+### SQL Warehouse as a Resource
+Instead of hard-coding warehouse IDs, the app declares a SQL warehouse as a **resource**:
+```yaml
+resources:
+  - key: sql_warehouse
+    type: sql-warehouse
+    permission: CAN_USE
+
+env:
+  - name: WAREHOUSE_ID
+    valueFrom: sql_warehouse  # Auto-inject warehouse ID
+```
+
+At runtime, Databricks automatically injects:
+- `WAREHOUSE_ID` - The actual warehouse ID
+- `DATABRICKS_HOST` - Workspace URL
+- `DATABRICKS_CLIENT_ID` - OAuth credentials
+- `DATABRICKS_CLIENT_SECRET` - OAuth credentials
+
+The app code just reads `WAREHOUSE_ID` from the environment and never knows the actual ID!
+
+### Benefits over Spark Session
+- **Performance**: SQL warehouses are optimized for SQL workloads
+- **Resource Management**: Dedicated compute separate from app runtime
+- **Scalability**: Auto-scaling capabilities
+- **Concurrency**: Better handling of concurrent requests
+- **Flexibility**: Swap warehouses without code changes
+
+### References
+- [Databricks App Templates](https://github.com/databricks/app-templates)
+- [Add SQL Warehouse Resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/sql-warehouse)
+- [Add Resources to Apps](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
 
 ## Troubleshooting
 
 ### App won't start
 - Check that `app.yaml` is in the same directory as `app.py`
 - Verify the source code path in workspace
+- Ensure a SQL warehouse resource is configured for the app
+
+### SQL Warehouse errors
+- Check that a warehouse is selected/provisioned for the app
+- The warehouse will auto-start if stopped (serverless is fastest)
+- Verify you have `CAN USE` permission on the warehouse
+- Check `WAREHOUSE_ID` environment variable is being injected (it's automatic)
 
 ### Functions fail to create
 - Ensure you have `CREATE FUNCTION` permission on the schema
 - Verify the catalog and schema exist
 - Check that you're not deploying to a system schema
+- Verify SQL warehouse has permissions to the catalog/schema
 
 ### Can't see catalogs/schemas
 - Ensure you have `USE CATALOG` and `USE SCHEMA` permissions
 - Check Unity Catalog is enabled in your workspace
+- Verify the SQL warehouse can query system tables
 
 ## Future Enhancements
 

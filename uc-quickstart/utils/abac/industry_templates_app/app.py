@@ -1,7 +1,14 @@
 import gradio as gr
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sql import StatementState
+import os
 
-# Note: 'spark' is automatically available in Databricks Apps
-# No need to create SparkSession - it's a global variable
+# Initialize Databricks client
+# Auth credentials are automatically injected by Databricks Apps
+w = WorkspaceClient()
+
+# Get SQL warehouse ID from environment (injected from app.yaml resource)
+WAREHOUSE_ID = os.getenv("WAREHOUSE_ID")
 
 # Finance SQL functions definition
 FINANCE_FUNCTIONS_SQL = """
@@ -102,12 +109,33 @@ COMMENT 'Row filter for specific region (CA only example)'
 RETURN state = 'CA';
 """
 
+def execute_sql(sql_query):
+    """Execute SQL using SQL warehouse"""
+    try:
+        result = w.statement_execution.execute_statement(
+            statement=sql_query,
+            warehouse_id=WAREHOUSE_ID,
+            wait_timeout="30s"
+        )
+        
+        if result.status.state == StatementState.SUCCEEDED:
+            if result.result and result.result.data_array:
+                return result.result.data_array
+            return []
+        else:
+            raise Exception(f"Query failed: {result.status.state}")
+    except Exception as e:
+        raise Exception(f"SQL execution error: {str(e)}")
+
 def get_catalogs():
     """Get list of catalogs from Unity Catalog"""
     try:
-        catalogs_df = spark.sql("SHOW CATALOGS")
-        catalogs = [row['catalog'] for row in catalogs_df.collect()]
-        return catalogs
+        data = execute_sql("SHOW CATALOGS")
+        # data_array returns list of lists, first row is headers
+        if len(data) > 1:
+            catalogs = [row[0] for row in data[1:]]  # Skip header row
+            return catalogs
+        return []
     except Exception as e:
         return [f"Error: {str(e)}"]
 
@@ -116,10 +144,12 @@ def get_schemas(catalog):
     if not catalog or catalog.startswith("Error"):
         return []
     try:
-        spark.sql(f"USE CATALOG {catalog}")
-        schemas_df = spark.sql("SHOW SCHEMAS")
-        schemas = [row['databaseName'] for row in schemas_df.collect()]
-        return schemas
+        data = execute_sql(f"SHOW SCHEMAS IN {catalog}")
+        # data_array returns list of lists, first row is headers
+        if len(data) > 1:
+            schemas = [row[0] for row in data[1:]]  # Skip header row
+            return schemas
+        return []
     except Exception as e:
         return [f"Error: {str(e)}"]
 
@@ -130,8 +160,8 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
             return "❌ Error: Please select catalog, schema, and industry"
         
         progress(0, desc="Setting catalog and schema...")
-        spark.sql(f"USE CATALOG {catalog}")
-        spark.sql(f"USE SCHEMA {schema}")
+        execute_sql(f"USE CATALOG {catalog}")
+        execute_sql(f"USE SCHEMA {schema}")
         
         progress(0.2, desc="Reading function definitions...")
         if industry == "Finance":
@@ -151,7 +181,7 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
-                    spark.sql(stmt)
+                    execute_sql(stmt)
                     success_count += 1
                     progress((0.3 + (0.6 * (idx + 1) / total)), 
                            desc=f"Created function {idx + 1}/{total}")
