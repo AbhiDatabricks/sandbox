@@ -149,8 +149,12 @@ def create_tag_policy(tag_key, description, values, workspace_url, token):
 def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Deploy functions to selected catalog and schema"""
     try:
+        # Validate inputs
         if not catalog or not schema or not industry:
-            return "❌ Error: Please select catalog, schema, and industry"
+            return f"❌ **Error**: Missing required fields\n\n- Catalog: {'✅' if catalog else '❌ Not selected'}\n- Schema: {'✅' if schema else '❌ Not selected'}\n- Industry: {'✅' if industry else '❌ Not selected'}\n\nPlease fill in all fields and try again."
+        
+        # Show what was selected for debugging
+        progress(0.0, desc=f"Selected: {catalog}.{schema} ({industry})")
         
         # Extract user token if using user authorization
         user_token = None
@@ -162,11 +166,21 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
         
-        progress(0.1, desc=f"Auth: {auth_mode} | Verifying schema...")
+        progress(0.05, desc=f"Auth: {auth_mode} | Checking catalog access...")
         try:
-            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema", user_token)
+            # Verify catalog exists and we have access
+            execute_sql(f"USE CATALOG {catalog}", "Use catalog", user_token)
         except Exception as e:
-            return f"❌ **Error**: Could not create/access schema\n\n{str(e)}"
+            return f"❌ **Error**: Cannot access catalog `{catalog}`\n\n{str(e)}\n\n**Solution:**\n```sql\nGRANT USE CATALOG ON CATALOG {catalog} TO `your_user_or_sp`;\n```"
+        
+        progress(0.1, desc=f"Creating schema {catalog}.{schema}...")
+        try:
+            # Create schema using fully qualified name (works regardless of context)
+            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema", user_token)
+            # Verify schema was created/exists
+            execute_sql(f"DESCRIBE SCHEMA {catalog}.{schema}", "Verify schema", user_token)
+        except Exception as e:
+            return f"❌ **Error**: Could not create schema `{catalog}.{schema}`\n\n{str(e)}\n\n**Possible causes:**\n- Missing CREATE SCHEMA permission\n- Schema name contains invalid characters\n- Catalog doesn't exist\n\n**Solution:**\n```sql\nGRANT CREATE SCHEMA ON CATALOG {catalog} TO `your_user_or_sp`;\nGRANT USE SCHEMA ON SCHEMA {catalog}.{schema} TO `your_user_or_sp`;\n```"
         
         progress(0.2, desc="Loading industry template...")
         try:
@@ -554,6 +568,7 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                     gr.Markdown("### Configuration")
                     catalog_dropdown = gr.Dropdown(
                         choices=get_catalogs(),
+                        value=None,
                         label="Catalog",
                         info="Select target catalog",
                         interactive=True
