@@ -460,8 +460,9 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
             
             schema_dropdown = gr.Dropdown(
                 label="Schema",
-                info="Select or create schema",
-                interactive=True
+                info="Select existing or type to create new schema",
+                interactive=True,
+                allow_custom_value=True
             )
             
             industry_dropdown = gr.Dropdown(
