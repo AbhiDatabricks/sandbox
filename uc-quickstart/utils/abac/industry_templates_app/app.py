@@ -4,6 +4,7 @@ from databricks.sdk.service.sql import StatementState
 import os
 import requests
 from industries import get_available_industries, load_industry_template
+from documentation import DOCUMENTATION_MD
 
 # Initialize Databricks client
 w = WorkspaceClient()
@@ -529,149 +530,152 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
 
 # Gradio UI
 with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("""
-    # 🏭 ABAC Industry Templates Deployer
+    gr.Markdown("# 🏭 ABAC Industry Templates Deployer")
     
-    Deploy complete ABAC (Attribute-Based Access Control) setup to your Unity Catalog.
-    
-    ### Workflow:
-    **Required Steps:**
-    1. **Create Functions** - Deploy masking/filtering UDFs
-    2. **Create Tag Policies** - Define governed tags
-    3. **Create ABAC Policies** - Apply policies using tags
-    
-    **Optional Testing Steps:**
-    4. **Create Test Data** - Generate sample tables (with _test suffix)
-    5. **Tag Test Data** - Apply tags to test tables
-    6. **Test Policies** - Run queries to verify masking works
-    """)
-    
-    with gr.Row():
-        with gr.Column():
-            gr.Markdown("### Configuration")
-            catalog_dropdown = gr.Dropdown(
-                choices=get_catalogs(),
-                label="Catalog",
-                info="Select target catalog",
-                interactive=True
-            )
-            
-            schema_dropdown = gr.Dropdown(
-                label="Schema",
-                info="Select existing or type to create new schema",
-                interactive=True,
-                allow_custom_value=True
-            )
-            
-            industry_dropdown = gr.Dropdown(
-                choices=get_available_industries(),
-                value="Finance",
-                label="Industry",
-                info="Select industry template",
-                interactive=True
-            )
-            
-            use_user_auth = gr.Checkbox(
-                label="Use User Authorization",
-                value=False,
-                info="Run as your user (checked) or Service Principal (unchecked)"
-            )
-            
-            refresh_btn = gr.Button("🔄 Refresh", size="sm")
-        
-        with gr.Column():
-            gr.Markdown("### Finance Template Includes:")
+    with gr.Tabs():
+        with gr.Tab("🚀 Deployer"):
             gr.Markdown("""
-            **Functions (15):**
-            - Credit card, SSN, email, phone masking
-            - Account/routing number protection
-            - IP address, transaction ID hashing
-            - Amount/income bucketing
-            - Fraud, high-value, business hours filters
+            Deploy complete ABAC (Attribute-Based Access Control) setup to your Unity Catalog.
             
-            **Tag Policies (4):**
-            - pii_type_finance
-            - pci_compliance_finance
-            - data_classification_finance
-            - fraud_detection_finance
+            ### Workflow:
+            **Required Steps:**
+            1. **Create Functions** - Deploy masking/filtering UDFs
+            2. **Create Tag Policies** - Define governed tags
+            3. **Create ABAC Policies** - Apply policies using tags
             
-            **ABAC Policies (14):**
-            - Column masks + row filters
+            **Optional Testing Steps:**
+            4. **Create Test Data** - Generate sample tables (with _test suffix)
+            5. **Tag Test Data** - Apply tags to test tables
+            6. **Test Policies** - Run queries to verify masking works
             """)
+            
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("### Configuration")
+                    catalog_dropdown = gr.Dropdown(
+                        choices=get_catalogs(),
+                        label="Catalog",
+                        info="Select target catalog",
+                        interactive=True
+                    )
+                    
+                    schema_dropdown = gr.Dropdown(
+                        label="Schema",
+                        info="Select existing or type to create new schema",
+                        interactive=True,
+                        allow_custom_value=True
+                    )
+                    
+                    industry_dropdown = gr.Dropdown(
+                        choices=get_available_industries(),
+                        value="Finance",
+                        label="Industry",
+                        info="Select industry template",
+                        interactive=True
+                    )
+                    
+                    use_user_auth = gr.Checkbox(
+                        label="Use User Authorization",
+                        value=False,
+                        info="Run as your user (checked) or Service Principal (unchecked)"
+                    )
+                    
+                    refresh_btn = gr.Button("🔄 Refresh", size="sm")
+                
+                with gr.Column():
+                    gr.Markdown("### Industry Templates Available:")
+                    gr.Markdown("""
+                    **6 Industries:**
+                    - Finance ✅ Complete
+                    - Healthcare ✅ Complete
+                    - Manufacturing ✅ Complete
+                    - Retail ⚙️ Partial
+                    - Telco ⚙️ Partial
+                    - Government ⚙️ Partial
+                    
+                    **Each includes:**
+                    - Masking/filtering functions
+                    - Tag policy definitions
+                    - ABAC policies (complete or placeholder)
+                    - Test data templates
+                    """)
     
-    gr.Markdown("---")
-    gr.Markdown("## Required Steps")
+            gr.Markdown("---")
+            gr.Markdown("## Required Steps")
+            
+            with gr.Row():
+                deploy_functions_btn = gr.Button("1️⃣ Create Functions", variant="primary", size="lg")
+                deploy_tags_btn = gr.Button("2️⃣ Create Tag Policies", variant="primary", size="lg")
+                deploy_abac_btn = gr.Button("3️⃣ Create ABAC Policies", variant="primary", size="lg")
+            
+            output_required = gr.Markdown(label="Status")
+            
+            gr.Markdown("---")
+            gr.Markdown("## Optional Testing Steps")
+            
+            with gr.Row():
+                create_test_btn = gr.Button("4️⃣ Create Test Data", size="lg")
+                tag_test_btn = gr.Button("5️⃣ Tag Test Data", size="lg")
+                test_policies_btn = gr.Button("6️⃣ Test Policies", size="lg")
     
-    with gr.Row():
-        deploy_functions_btn = gr.Button("1️⃣ Create Functions", variant="primary", size="lg")
-        deploy_tags_btn = gr.Button("2️⃣ Create Tag Policies", variant="primary", size="lg")
-        deploy_abac_btn = gr.Button("3️⃣ Create ABAC Policies", variant="primary", size="lg")
-    
-    output_required = gr.Markdown(label="Status")
-    
-    gr.Markdown("---")
-    gr.Markdown("## Optional Testing Steps")
-    
-    with gr.Row():
-        create_test_btn = gr.Button("4️⃣ Create Test Data", size="lg")
-        tag_test_btn = gr.Button("5️⃣ Tag Test Data", size="lg")
-        test_policies_btn = gr.Button("6️⃣ Test Policies", size="lg")
-    
-    output_optional = gr.Markdown(label="Test Status")
-    
-    # Event handlers
-    def update_schemas(catalog):
-        schemas = get_schemas(catalog)
-        return gr.Dropdown(choices=schemas, value=None)
-    
-    catalog_dropdown.change(
-        fn=update_schemas,
-        inputs=[catalog_dropdown],
-        outputs=[schema_dropdown]
-    )
-    
-    refresh_btn.click(
-        fn=lambda: gr.Dropdown(choices=get_catalogs(), value=None),
-        outputs=[catalog_dropdown]
-    )
-    
-    # Required steps
-    deploy_functions_btn.click(
-        fn=deploy_functions,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
-        outputs=[output_required]
-    )
-    
-    deploy_tags_btn.click(
-        fn=deploy_tag_policies,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
-        outputs=[output_required]
-    )
-    
-    deploy_abac_btn.click(
-        fn=deploy_abac_policies,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
-        outputs=[output_required]
-    )
-    
-    # Optional testing steps
-    create_test_btn.click(
-        fn=create_test_data,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
-        outputs=[output_optional]
-    )
-    
-    tag_test_btn.click(
-        fn=tag_test_data,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
-        outputs=[output_optional]
-    )
-    
-    test_policies_btn.click(
-        fn=test_policies,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
-        outputs=[output_optional]
-    )
+            output_optional = gr.Markdown(label="Test Status")
+            
+            # Event handlers
+            def update_schemas(catalog):
+                schemas = get_schemas(catalog)
+                return gr.Dropdown(choices=schemas, value=None)
+            
+            catalog_dropdown.change(
+                fn=update_schemas,
+                inputs=[catalog_dropdown],
+                outputs=[schema_dropdown]
+            )
+            
+            refresh_btn.click(
+                fn=lambda: gr.Dropdown(choices=get_catalogs(), value=None),
+                outputs=[catalog_dropdown]
+            )
+            
+            # Required steps
+            deploy_functions_btn.click(
+                fn=deploy_functions,
+                inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
+                outputs=[output_required]
+            )
+            
+            deploy_tags_btn.click(
+                fn=deploy_tag_policies,
+                inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
+                outputs=[output_required]
+            )
+            
+            deploy_abac_btn.click(
+                fn=deploy_abac_policies,
+                inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
+                outputs=[output_required]
+            )
+            
+            # Optional testing steps
+            create_test_btn.click(
+                fn=create_test_data,
+                inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
+                outputs=[output_optional]
+            )
+            
+            tag_test_btn.click(
+                fn=tag_test_data,
+                inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
+                outputs=[output_optional]
+            )
+            
+            test_policies_btn.click(
+                fn=test_policies,
+                inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
+                outputs=[output_optional]
+            )
+        
+        with gr.Tab("📚 Documentation"):
+            gr.Markdown(DOCUMENTATION_MD)
     
     gr.Markdown("""
     ---
