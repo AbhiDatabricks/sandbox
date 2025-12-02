@@ -2,21 +2,17 @@ import gradio as gr
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.sql import StatementState
 import os
+import requests
+from industries import get_available_industries, load_industry_template
 
 # Initialize Databricks client
-# Auth credentials are automatically injected by Databricks Apps
 w = WorkspaceClient()
 
 # Get SQL warehouse ID from environment (injected from app.yaml resource)
 WAREHOUSE_ID = os.getenv("WAREHOUSE_ID")
 
-# If no warehouse ID from resource, show helpful error
+# If no warehouse ID from resource, find available warehouse
 if not WAREHOUSE_ID:
-    import sys
-    print("ERROR: No SQL warehouse configured!")
-    print("Please configure a SQL warehouse resource for this app in Databricks.")
-    print("Go to: Apps → abacindustry → Configuration → Resources")
-    # Try to get any available warehouse as fallback
     try:
         warehouses = w.warehouses.list()
         first_warehouse = next(iter(warehouses), None)
@@ -25,105 +21,6 @@ if not WAREHOUSE_ID:
             print(f"Using fallback warehouse: {first_warehouse.name} ({WAREHOUSE_ID})")
     except Exception as e:
         print(f"Could not find fallback warehouse: {e}")
-
-# Finance SQL functions definition
-FINANCE_FUNCTIONS_SQL = """
--- Create Finance ABAC Functions
-
-CREATE OR REPLACE FUNCTION mask_credit_card(card_number STRING)
-RETURNS STRING
-COMMENT 'Masks credit card number showing only last 4 digits'
-RETURN CONCAT('****-****-****-', SUBSTRING(card_number, -4, 4));
-
-CREATE OR REPLACE FUNCTION mask_ssn_last4(ssn STRING)
-RETURNS STRING
-COMMENT 'Masks SSN showing only last 4 digits'
-RETURN CONCAT('***-**-', SUBSTRING(ssn, -4, 4));
-
-CREATE OR REPLACE FUNCTION mask_email(email STRING)
-RETURNS STRING
-COMMENT 'Masks email local part, shows domain'
-RETURN CONCAT('***@', SPLIT(email, '@')[1]);
-
-CREATE OR REPLACE FUNCTION mask_phone(phone STRING)
-RETURNS STRING
-COMMENT 'Masks phone number showing only last 4 digits'
-RETURN CONCAT('***-***-', SUBSTRING(phone, -4, 4));
-
-CREATE OR REPLACE FUNCTION mask_account_last4(account_number STRING)
-RETURNS STRING
-COMMENT 'Masks account number showing only last 4 digits'
-RETURN CONCAT('********', SUBSTRING(account_number, -4, 4));
-
-CREATE OR REPLACE FUNCTION mask_routing_number(routing_number STRING)
-RETURNS STRING
-COMMENT 'Masks routing number showing only last 2 digits'
-RETURN CONCAT('*******', SUBSTRING(routing_number, -2, 2));
-
-CREATE OR REPLACE FUNCTION mask_ip_address(ip STRING)
-RETURNS STRING
-COMMENT 'Masks IP address to subnet level'
-RETURN CONCAT(
-    SPLIT(ip, '\\.')[0], '.',
-    SPLIT(ip, '\\.')[1], '.',
-    '***', '.',
-    '***'
-);
-
-CREATE OR REPLACE FUNCTION mask_transaction_hash(transaction_id STRING)
-RETURNS STRING
-COMMENT 'Returns deterministic hash of transaction ID'
-RETURN CONCAT('TXN_', SHA2(transaction_id, 256));
-
-CREATE OR REPLACE FUNCTION mask_customer_id_deterministic(customer_id STRING)
-RETURNS STRING
-COMMENT 'Returns deterministic hash for customer ID (preserves joins)'
-RETURN CONCAT('CUST_', SUBSTRING(SHA2(customer_id, 256), 1, 12));
-
-CREATE OR REPLACE FUNCTION mask_amount_bucket(amount DECIMAL(18,2))
-RETURNS STRING
-COMMENT 'Buckets transaction amounts into ranges'
-RETURN CASE
-    WHEN amount < 100 THEN '$0-$100'
-    WHEN amount < 500 THEN '$100-$500'
-    WHEN amount < 1000 THEN '$500-$1K'
-    WHEN amount < 5000 THEN '$1K-$5K'
-    WHEN amount < 10000 THEN '$5K-$10K'
-    ELSE '$10K+'
-END;
-
-CREATE OR REPLACE FUNCTION mask_income_bracket(income DECIMAL(18,2))
-RETURNS STRING
-COMMENT 'Buckets annual income into ranges'
-RETURN CASE
-    WHEN income < 30000 THEN 'Under $30K'
-    WHEN income < 50000 THEN '$30K-$50K'
-    WHEN income < 75000 THEN '$50K-$75K'
-    WHEN income < 100000 THEN '$75K-$100K'
-    WHEN income < 150000 THEN '$100K-$150K'
-    ELSE 'Over $150K'
-END;
-
-CREATE OR REPLACE FUNCTION filter_fraud_flagged_only(fraud_flag BOOLEAN)
-RETURNS BOOLEAN
-COMMENT 'Row filter to show only fraud-flagged transactions'
-RETURN fraud_flag = TRUE;
-
-CREATE OR REPLACE FUNCTION filter_high_value_transactions(amount DECIMAL(18,2))
-RETURNS BOOLEAN
-COMMENT 'Row filter for transactions over $5000'
-RETURN amount > 5000;
-
-CREATE OR REPLACE FUNCTION filter_business_hours()
-RETURNS BOOLEAN
-COMMENT 'Row filter for business hours (9 AM - 5 PM)'
-RETURN HOUR(CURRENT_TIMESTAMP()) BETWEEN 9 AND 17;
-
-CREATE OR REPLACE FUNCTION filter_by_region(state STRING)
-RETURNS BOOLEAN
-COMMENT 'Row filter for specific region (CA only example)'
-RETURN state = 'CA';
-"""
 
 def execute_sql(sql_query, description="SQL query"):
     """Execute SQL using SQL warehouse"""
@@ -145,16 +42,14 @@ def execute_sql(sql_query, description="SQL query"):
                 error_msg += f"\nMessage: {result.status.error.message}"
             raise Exception(error_msg)
     except Exception as e:
-        # Don't truncate error messages
         raise Exception(f"{description}\n{str(e)}")
 
 def get_catalogs():
     """Get list of catalogs from Unity Catalog"""
     try:
         data = execute_sql("SHOW CATALOGS")
-        # data_array returns list of lists, first row is headers
         if len(data) > 1:
-            catalogs = [row[0] for row in data[1:]]  # Skip header row
+            catalogs = [row[0] for row in data[1:]]
             return catalogs
         return []
     except Exception as e:
@@ -166,14 +61,51 @@ def get_schemas(catalog):
         return []
     try:
         data = execute_sql(f"SHOW SCHEMAS IN {catalog}")
-        # data_array returns list of lists, first row is headers
         if len(data) > 1:
-            schemas = [row[0] for row in data[1:]]  # Skip header row
+            schemas = [row[0] for row in data[1:]]
             return schemas
         return []
     except Exception as e:
         return [f"Error: {str(e)}"]
 
+def check_test_tables_exist(catalog, schema):
+    """Check if _test tables exist"""
+    try:
+        data = execute_sql(f"SHOW TABLES IN {catalog}.{schema}")
+        if len(data) > 1:
+            tables = [row[1] for row in data[1:]]  # Second column is table name
+            test_tables = [t for t in tables if t.endswith('_test')]
+            return len(test_tables) > 0, test_tables
+        return False, []
+    except:
+        return False, []
+
+def create_tag_policy(tag_key, description, values, workspace_url, token):
+    """Create a tag policy via REST API"""
+    payload = {
+        "tag_key": tag_key,
+        "description": description,
+        "values": [{"name": v} for v in values]
+    }
+    
+    try:
+        response = requests.post(
+            f"{workspace_url}/api/2.1/tag-policies",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload
+        )
+        result = response.json()
+        
+        if response.status_code == 200:
+            return True, f"✅ Created: {tag_key}"
+        elif response.status_code == 409 or result.get('error_code') == 'ALREADY_EXISTS':
+            return True, f"ℹ️  Already exists: {tag_key}"
+        else:
+            return False, f"❌ Failed: {tag_key} - {result.get('message', 'Unknown error')}"
+    except Exception as e:
+        return False, f"❌ Error: {tag_key} - {str(e)}"
+
+# Step 1: Deploy Functions
 def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
     """Deploy functions to selected catalog and schema"""
     try:
@@ -181,23 +113,21 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
             return "❌ Error: Please select catalog, schema, and industry"
         
         progress(0.1, desc="Verifying schema exists...")
-        # Ensure schema exists
         try:
-            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema if not exists")
+            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema")
         except Exception as e:
             return f"❌ **Error**: Could not create/access schema\n\n{str(e)}"
         
-        progress(0.2, desc="Reading function definitions...")
-        if industry == "Finance":
-            sql_statements = FINANCE_FUNCTIONS_SQL
-        else:
-            return f"❌ Error: {industry} not implemented yet"
+        progress(0.2, desc="Loading industry template...")
+        try:
+            template = load_industry_template(industry)
+            sql_statements = template.FUNCTIONS_SQL
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
         
-        # Replace function names with fully qualified names (catalog.schema.function)
-        # This is needed because USE CATALOG/SCHEMA don't persist across Statement Execution API calls
+        # Replace with fully qualified names
         sql_statements = sql_statements.replace("CREATE OR REPLACE FUNCTION ", f"CREATE OR REPLACE FUNCTION {catalog}.{schema}.")
         
-        # Split by semicolon and execute each statement
         statements = [s.strip() for s in sql_statements.split(';') if s.strip() and not s.strip().startswith('--')]
         total = len(statements)
         
@@ -209,7 +139,6 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
-                    # Extract function name for better logging
                     func_name = "unknown"
                     if "CREATE" in stmt.upper() and "FUNCTION" in stmt.upper():
                         parts = stmt.upper().split("FUNCTION")
@@ -219,117 +148,371 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
                     execute_sql(stmt, f"CREATE FUNCTION {func_name}")
                     success_count += 1
                     progress((0.3 + (0.6 * (idx + 1) / total)), 
-                           desc=f"Created function {idx + 1}/{total}")
+                           desc=f"Created {idx + 1}/{total}")
             except Exception as e:
-                error_msg = str(e)
-                errors.append(f"Function {idx + 1} ({func_name}):\n{error_msg[:500]}")
+                errors.append(f"Function {idx + 1} ({func_name}):\n{str(e)[:300]}")
         
         progress(1.0, desc="Complete!")
         
-        result = f"""
-✅ **Deployment Complete!**
+        if success_count == total:
+            return f"✅ **Step 1 Complete!**\n\n📊 **Created {success_count} functions** in `{catalog}.{schema}`\n\n**Next:** Create tag policies (Step 2)"
+        elif success_count > 0:
+            result = f"⚠️ **Partial Success**\n\n✅ Created: {success_count}/{total}\n❌ Failed: {len(errors)}\n\n"
+            for err in errors[:2]:
+                result += f"\n{err}\n"
+            return result
+        else:
+            result = f"❌ **All functions failed**\n\n"
+            for err in errors[:3]:
+                result += f"\n{err}\n" + "-"*50 + "\n"
+            return result
+            
+    except Exception as e:
+        return f"❌ **Deployment Failed**\n\n{str(e)}"
 
-📊 **Target**: `{catalog}.{schema}`
-🏭 **Industry**: {industry}
-✨ **Functions Created**: {success_count}/{total}
-
-### Functions Deployed:
-- mask_credit_card
-- mask_ssn_last4
-- mask_email
-- mask_phone
-- mask_account_last4
-- mask_routing_number
-- mask_ip_address
-- mask_transaction_hash
-- mask_customer_id_deterministic
-- mask_amount_bucket
-- mask_income_bracket
-- filter_fraud_flagged_only
-- filter_high_value_transactions
-- filter_business_hours
-- filter_by_region
-
-### Next Steps:
-1. Create tables in your schema
-2. Apply tags to columns
-3. Create ABAC policies using these functions
-"""
+# Step 2: Create Tag Policies
+def deploy_tag_policies(catalog, schema, industry, progress=gr.Progress()):
+    """Create tag policies for the industry"""
+    try:
+        if not catalog or not schema or not industry:
+            return "❌ Error: Please select catalog, schema, and industry"
         
-        if errors:
-            result += f"\n\n⚠️ **Errors**: {len(errors)} functions failed\n"
-            result += "\n**Error Details:**\n```\n"
-            for idx, err in enumerate(errors[:3], 1):  # Show first 3 full errors
-                result += f"\nError {idx}:\n{err}\n"
-                result += "-" * 80 + "\n"
-            if len(errors) > 3:
-                result += f"\n... and {len(errors) - 3} more errors\n"
-            result += "```"
+        progress(0.05, desc="Loading industry template...")
+        try:
+            template = load_industry_template(industry)
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
         
-        return result
+        progress(0.1, desc="Getting workspace credentials...")
+        workspace_url = w.config.host
+        token = w.config.authenticate()
+        
+        if not token:
+            return "❌ Error: Could not get authentication token"
+        
+        # Get token string
+        if hasattr(token, 'token'):
+            token_str = token.token()
+        else:
+            token_str = str(token)
+        
+        progress(0.2, desc="Creating tag policies...")
+        
+        results = []
+        success_count = 0
+        
+        for idx, (tag_key, desc, values) in enumerate(template.TAG_DEFINITIONS):
+            success, msg = create_tag_policy(tag_key, desc, values, workspace_url, token_str)
+            results.append(msg)
+            if success:
+                success_count += 1
+            progress(0.2 + (0.7 * (idx + 1) / len(template.TAG_DEFINITIONS)), 
+                   desc=f"Created {idx + 1}/{len(template.TAG_DEFINITIONS)}")
+        
+        progress(1.0, desc="Complete!")
+        
+        output = f"✅ **Step 2 Complete!**\n\n📊 **Created {success_count}/{len(template.TAG_DEFINITIONS)} tag policies**\n\n"
+        for r in results:
+            output += f"{r}\n"
+        
+        output += f"\n**Next:** Create ABAC policies (Step 3)"
+        return output
         
     except Exception as e:
-        return f"❌ **Deployment Failed**\n\nError: {str(e)}"
+        return f"❌ **Tag Policy Creation Failed**\n\n{str(e)}"
+
+# Step 3: Create ABAC Policies
+def deploy_abac_policies(catalog, schema, industry, progress=gr.Progress()):
+    """Create ABAC policies"""
+    try:
+        if not catalog or not schema or not industry:
+            return "❌ Error: Please select catalog, schema, and industry"
+        
+        progress(0.05, desc="Loading industry template...")
+        try:
+            template = load_industry_template(industry)
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
+        
+        progress(0.1, desc="Reading ABAC policy definitions...")
+        
+        # Replace placeholders
+        policies_sql = template.ABAC_POLICIES_SQL.replace("{CATALOG}", catalog).replace("{SCHEMA}", schema)
+        
+        statements = [s.strip() for s in policies_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        total = len(statements)
+        
+        progress(0.2, desc=f"Creating {total} ABAC policies...")
+        
+        success_count = 0
+        errors = []
+        
+        for idx, stmt in enumerate(statements):
+            try:
+                if stmt.strip():
+                    execute_sql(stmt, f"CREATE POLICY {idx+1}")
+                    success_count += 1
+                    progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Created {idx + 1}/{total}")
+            except Exception as e:
+                errors.append(f"Policy {idx + 1}: {str(e)[:200]}")
+        
+        progress(1.0, desc="Complete!")
+        
+        if success_count == total:
+            return f"✅ **Step 3 Complete!**\n\n📊 **Created {success_count} ABAC policies** in `{catalog}.{schema}`\n\n**Optional:** Create test data to try it out (Step 4)"
+        else:
+            result = f"⚠️ **Partial Success**\n\n✅ Created: {success_count}/{total}\n❌ Failed: {len(errors)}\n\n"
+            for err in errors[:3]:
+                result += f"{err}\n"
+            return result
+            
+    except Exception as e:
+        return f"❌ **ABAC Policy Creation Failed**\n\n{str(e)}"
+
+# Step 4: Create Test Data (Optional)
+def create_test_data(catalog, schema, industry, progress=gr.Progress()):
+    """Create test tables with sample data"""
+    try:
+        if not catalog or not schema or not industry:
+            return "❌ Error: Please select catalog, schema, and industry"
+        
+        progress(0.05, desc="Loading industry template...")
+        try:
+            template = load_industry_template(industry)
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
+        
+        progress(0.1, desc="Reading table definitions...")
+        
+        # Replace with fully qualified names and add _test suffix
+        tables_sql = template.TEST_TABLES_SQL.replace("CREATE TABLE IF NOT EXISTS ", f"CREATE TABLE IF NOT EXISTS {catalog}.{schema}.")
+        tables_sql = tables_sql.replace("INSERT INTO ", f"INSERT INTO {catalog}.{schema}.")
+        
+        statements = [s.strip() for s in tables_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        total = len(statements)
+        
+        progress(0.2, desc=f"Creating test tables...")
+        
+        success_count = 0
+        errors = []
+        
+        for idx, stmt in enumerate(statements):
+            try:
+                if stmt.strip():
+                    execute_sql(stmt, f"Table operation {idx+1}")
+                    success_count += 1
+                    progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Executed {idx + 1}/{total}")
+            except Exception as e:
+                errors.append(f"Statement {idx + 1}: {str(e)[:200]}")
+        
+        progress(1.0, desc="Complete!")
+        
+        if success_count > 0:
+            tables_list = "\n".join([f"- {t}" for t in template.TEST_TABLES])
+            return f"✅ **Test Data Created!**\n\n📊 **Executed {success_count}/{total} statements**\n\nTables created:\n{tables_list}\n\n**Next:** Tag the test data (Step 5)"
+        else:
+            result = f"❌ **Test Data Creation Failed**\n\n"
+            for err in errors[:3]:
+                result += f"{err}\n"
+            return result
+            
+    except Exception as e:
+        return f"❌ **Test Data Creation Failed**\n\n{str(e)}"
+
+# Step 5: Tag Test Data (Optional, conditional)
+def tag_test_data(catalog, schema, industry, progress=gr.Progress()):
+    """Apply tags to test table columns"""
+    try:
+        if not catalog or not schema or not industry:
+            return "❌ Error: Please select catalog, schema, and industry"
+        
+        # Check if test tables exist
+        exists, test_tables = check_test_tables_exist(catalog, schema)
+        if not exists:
+            return "⚠️ **No test tables found!**\n\nCreate test data first (Step 4)"
+        
+        progress(0.05, desc="Loading industry template...")
+        try:
+            template = load_industry_template(industry)
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
+        
+        progress(0.1, desc="Applying tags to test tables...")
+        
+        # Replace with catalog.schema.table_test
+        tagging_sql = template.TAG_APPLICATIONS_SQL
+        tagging_sql = tagging_sql.replace("ALTER TABLE customers", f"ALTER TABLE {catalog}.{schema}.customers_test")
+        tagging_sql = tagging_sql.replace("ALTER TABLE accounts", f"ALTER TABLE {catalog}.{schema}.accounts_test")
+        tagging_sql = tagging_sql.replace("ALTER TABLE credit_cards", f"ALTER TABLE {catalog}.{schema}.credit_cards_test")
+        tagging_sql = tagging_sql.replace("ALTER TABLE transactions", f"ALTER TABLE {catalog}.{schema}.transactions_test")
+        
+        statements = [s.strip() for s in tagging_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        total = len(statements)
+        
+        progress(0.2, desc=f"Tagging columns...")
+        
+        success_count = 0
+        errors = []
+        
+        for idx, stmt in enumerate(statements):
+            try:
+                if stmt.strip():
+                    execute_sql(stmt, f"Tag column {idx+1}")
+                    success_count += 1
+                    progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Tagged {idx + 1}/{total}")
+            except Exception as e:
+                errors.append(f"Tag {idx + 1}: {str(e)[:150]}")
+        
+        progress(1.0, desc="Complete!")
+        
+        if success_count > 0:
+            return f"✅ **Tags Applied!**\n\n🏷️ **Tagged {success_count} columns** across test tables\n\n**Next:** Test the policies (Step 6)"
+        else:
+            result = f"❌ **Tagging Failed**\n\n"
+            for err in errors[:3]:
+                result += f"{err}\n"
+            return result
+            
+    except Exception as e:
+        return f"❌ **Tagging Failed**\n\n{str(e)}"
+
+# Step 6: Test Policies (Optional, conditional)
+def test_policies(catalog, schema, industry, progress=gr.Progress()):
+    """Run test queries to demonstrate ABAC policies"""
+    try:
+        if not catalog or not schema or not industry:
+            return "❌ Error: Please select catalog, schema, and industry"
+        
+        # Check if test tables exist
+        exists, test_tables = check_test_tables_exist(catalog, schema)
+        if not exists:
+            return "⚠️ **No test tables found!**\n\nCreate test data first (Step 4)"
+        
+        progress(0.1, desc="Loading industry template...")
+        try:
+            template = load_industry_template(industry)
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
+        
+        progress(0.2, desc="Running test queries...")
+        
+        # Simple test queries to show masking works
+        test_queries = [
+            f"SELECT customer_id, email, phone, ssn FROM {catalog}.{schema}.customers_test LIMIT 3",
+            f"SELECT card_id, card_number FROM {catalog}.{schema}.credit_cards_test LIMIT 2",
+            f"SELECT transaction_id, amount, ip_address FROM {catalog}.{schema}.transactions_test LIMIT 3"
+        ]
+        
+        results = []
+        
+        for idx, query in enumerate(test_queries):
+            try:
+                data = execute_sql(query, f"Test query {idx+1}")
+                results.append(f"✅ Query {idx+1} succeeded ({len(data)-1} rows)")
+                progress(0.2 + (0.7 * (idx + 1) / len(test_queries)), desc=f"Tested {idx + 1}/{len(test_queries)}")
+            except Exception as e:
+                results.append(f"⚠️ Query {idx+1} failed: {str(e)[:100]}")
+        
+        progress(1.0, desc="Complete!")
+        
+        output = f"✅ **Testing Complete!**\n\n📊 **Test Results:**\n\n"
+        for r in results:
+            output += f"{r}\n"
+        
+        output += f"\n**Note:** Check the actual data in Databricks to see masking in action!"
+        output += f"\n\nQuery your test tables:\n"
+        output += f"- `SELECT * FROM {catalog}.{schema}.customers_test`\n"
+        output += f"- `SELECT * FROM {catalog}.{schema}.credit_cards_test`\n"
+        
+        return output
+        
+    except Exception as e:
+        return f"❌ **Testing Failed**\n\n{str(e)}"
 
 # Gradio UI
 with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft()) as demo:
     gr.Markdown("""
     # 🏭 ABAC Industry Templates Deployer
     
-    Deploy Attribute-Based Access Control (ABAC) masking and filtering functions to your Unity Catalog.
+    Deploy complete ABAC (Attribute-Based Access Control) setup to your Unity Catalog.
     
-    ### How to Use:
-    1. **Select Catalog**: Choose the target catalog from your workspace
-    2. **Select Schema**: Choose or create a schema for the functions
-    3. **Select Industry**: Choose the industry template (Finance available)
-    4. **Deploy**: Click to create all masking/filtering functions
+    ### Workflow:
+    **Required Steps:**
+    1. **Create Functions** - Deploy masking/filtering UDFs
+    2. **Create Tag Policies** - Define governed tags
+    3. **Create ABAC Policies** - Apply policies using tags
+    
+    **Optional Testing Steps:**
+    4. **Create Test Data** - Generate sample tables (with _test suffix)
+    5. **Tag Test Data** - Apply tags to test tables
+    6. **Test Policies** - Run queries to verify masking works
     """)
     
     with gr.Row():
         with gr.Column():
-            gr.Markdown("### Step 1: Select Catalog & Schema")
+            gr.Markdown("### Configuration")
             catalog_dropdown = gr.Dropdown(
                 choices=get_catalogs(),
                 label="Catalog",
-                info="Select the catalog where functions will be created",
+                info="Select target catalog",
                 interactive=True
             )
             
             schema_dropdown = gr.Dropdown(
                 label="Schema",
-                info="Select the schema for the functions",
+                info="Select or create schema",
                 interactive=True
             )
             
-            refresh_btn = gr.Button("🔄 Refresh Catalogs", size="sm")
-            
-        with gr.Column():
-            gr.Markdown("### Step 2: Select Industry Template")
             industry_dropdown = gr.Dropdown(
-                choices=["Finance"],
+                choices=get_available_industries(),
                 value="Finance",
                 label="Industry",
-                info="Choose the industry template to deploy",
+                info="Select industry template",
                 interactive=True
             )
             
+            refresh_btn = gr.Button("🔄 Refresh", size="sm")
+        
+        with gr.Column():
+            gr.Markdown("### Finance Template Includes:")
             gr.Markdown("""
-            **Finance Template Includes:**
-            - Credit card masking
-            - SSN protection
-            - Email/phone masking
-            - Account number protection
-            - Transaction amount bucketing
-            - Income bracketing
-            - Fraud detection filters
-            - Business hours filters
+            **Functions (15):**
+            - Credit card, SSN, email, phone masking
+            - Account/routing number protection
+            - IP address, transaction ID hashing
+            - Amount/income bucketing
+            - Fraud, high-value, business hours filters
+            
+            **Tag Policies (4):**
+            - pii_type_finance
+            - pci_compliance_finance
+            - data_classification_finance
+            - fraud_detection_finance
+            
+            **ABAC Policies (14):**
+            - Column masks + row filters
             """)
     
-    gr.Markdown("### Step 3: Deploy Functions")
+    gr.Markdown("---")
+    gr.Markdown("## Required Steps")
     
-    deploy_btn = gr.Button("🚀 Deploy Functions", variant="primary", size="lg")
+    with gr.Row():
+        deploy_functions_btn = gr.Button("1️⃣ Create Functions", variant="primary", size="lg")
+        deploy_tags_btn = gr.Button("2️⃣ Create Tag Policies", variant="primary", size="lg")
+        deploy_abac_btn = gr.Button("3️⃣ Create ABAC Policies", variant="primary", size="lg")
     
-    output = gr.Markdown(label="Deployment Status")
+    output_required = gr.Markdown(label="Status")
+    
+    gr.Markdown("---")
+    gr.Markdown("## Optional Testing Steps")
+    
+    with gr.Row():
+        create_test_btn = gr.Button("4️⃣ Create Test Data", size="lg")
+        tag_test_btn = gr.Button("5️⃣ Tag Test Data", size="lg")
+        test_policies_btn = gr.Button("6️⃣ Test Policies", size="lg")
+    
+    output_optional = gr.Markdown(label="Test Status")
     
     # Event handlers
     def update_schemas(catalog):
@@ -347,20 +530,50 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
         outputs=[catalog_dropdown]
     )
     
-    deploy_btn.click(
+    # Required steps
+    deploy_functions_btn.click(
         fn=deploy_functions,
         inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
-        outputs=[output]
+        outputs=[output_required]
+    )
+    
+    deploy_tags_btn.click(
+        fn=deploy_tag_policies,
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        outputs=[output_required]
+    )
+    
+    deploy_abac_btn.click(
+        fn=deploy_abac_policies,
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        outputs=[output_required]
+    )
+    
+    # Optional testing steps
+    create_test_btn.click(
+        fn=create_test_data,
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        outputs=[output_optional]
+    )
+    
+    tag_test_btn.click(
+        fn=tag_test_data,
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        outputs=[output_optional]
+    )
+    
+    test_policies_btn.click(
+        fn=test_policies,
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        outputs=[output_optional]
     )
     
     gr.Markdown("""
     ---
-    ### 📚 Additional Resources
+    ### 📚 Resources
     - [Unity Catalog ABAC Documentation](https://docs.databricks.com/data-governance/unity-catalog/abac/)
-    - [Masking Functions Guide](https://docs.databricks.com/data-governance/unity-catalog/filters-and-masks)
     - [GitHub Repository](https://github.com/AbhiDatabricks/sandbox)
     """)
 
 if __name__ == "__main__":
     demo.launch()
-

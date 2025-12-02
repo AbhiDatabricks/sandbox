@@ -4,14 +4,29 @@ A Databricks App that provides a simple UI to deploy ABAC (Attribute-Based Acces
 
 ## Features
 
-- 🎯 **Select Catalog & Schema**: Choose where to deploy functions via dropdown
-- 🏭 **Industry Templates**: Start with Finance template (more coming soon)
-- 🚀 **One-Click Deployment**: Deploy 15+ masking/filtering functions instantly
-- ✅ **Real-time Progress**: Track deployment status with progress indicators
+### Complete ABAC Workflow
+
+**Required Steps:**
+1. 🔧 **Create Functions** - Deploy masking/filtering UDFs (15 functions)
+2. 🏷️ **Create Tag Policies** - Define governed tags (4 policies)
+3. 🛡️ **Create ABAC Policies** - Apply column masks and row filters (13 policies)
+
+**Optional Testing Steps:**
+4. 📊 **Create Test Data** - Generate sample tables with _test suffix
+5. 🏷️ **Tag Test Data** - Apply tags to test table columns (only if test data exists)
+6. 🧪 **Test Policies** - Run queries to verify masking (only if test data exists)
+
+### Key Features
+- 🎯 **Catalog & Schema Selection**: Choose targets via dropdown
+- 🏭 **Modular Industry Templates**: Easy to add new industries
+- 🚀 **One-Click Deployment**: Each step executed with a button
+- ✅ **Real-time Progress**: Track deployment status
+- 🔒 **Conditional Steps**: Test steps only available when test data exists
 
 ## What Gets Deployed (Finance Template)
 
-### Masking Functions (11):
+### Step 1: Masking & Filter Functions (15)
+**Column Masking Functions (11):**
 - `mask_credit_card` - PCI-DSS compliant credit card masking
 - `mask_ssn_last4` - SSN protection (last 4 digits)
 - `mask_email` - Email masking (hides local part)
@@ -24,11 +39,28 @@ A Databricks App that provides a simple UI to deploy ABAC (Attribute-Based Acces
 - `mask_amount_bucket` - Transaction amount bucketing
 - `mask_income_bracket` - Income range bucketing
 
-### Filter Functions (4):
+**Row Filter Functions (4):**
 - `filter_fraud_flagged_only` - Show only fraudulent transactions
 - `filter_high_value_transactions` - Filter transactions > $5K
 - `filter_business_hours` - Business hours (9 AM - 5 PM) filter
 - `filter_by_region` - Regional access filter (CA example)
+
+### Step 2: Tag Policies (4)
+- `pii_type_finance` - PII field types (12 values)
+- `pci_compliance_finance` - PCI-DSS compliance
+- `data_classification_finance` - Data classification levels
+- `fraud_detection_finance` - Fraud flags
+
+### Step 3: ABAC Policies (13)
+- 9 column mask policies (credit card, SSN, email, phone, etc.)
+- 3 row filter policies (fraud, high-value, business hours)
+- All applied to `account users` group
+
+### Step 4-6: Optional Test Data
+- 4 test tables with _test suffix
+- Sample data for testing
+- Tag applications
+- Test queries
 
 ## How to Deploy
 
@@ -110,10 +142,26 @@ CREATE POLICY mask_ssn ON SCHEMA finance
 
 ```
 industry_templates_app/
-├── app.py          # Main Gradio application
-├── app.yaml        # Databricks App configuration
-└── README.md       # This file
+├── app.py                      # Main Gradio application
+├── app.yaml                    # Databricks App configuration
+├── README.md                   # This file
+└── industries/                 # Modular industry templates
+    ├── __init__.py             # Dynamic template loader
+    ├── finance_template.py     # Finance industry SQL
+    ├── README.md               # How to add new industries
+    └── <industry>_template.py  # Add more industries here!
 ```
+
+### Modular Design
+
+Each industry lives in its own file under `industries/` with:
+- Functions SQL
+- Tag definitions
+- ABAC policies
+- Test data (optional)
+- Tag applications (optional)
+
+**Adding a new industry is simple**: Just create `industries/<industry>_template.py` following the template structure. See `industries/README.md` for details.
 
 ## Requirements
 
