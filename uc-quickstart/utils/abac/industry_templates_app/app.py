@@ -192,7 +192,9 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
         # Replace with fully qualified names
         sql_statements = sql_statements.replace("CREATE OR REPLACE FUNCTION ", f"CREATE OR REPLACE FUNCTION {catalog}.{schema}.")
         
-        statements = [s.strip() for s in sql_statements.split(';') if s.strip() and not s.strip().startswith('--')]
+        # Split by semicolon and keep only parts that contain CREATE FUNCTION
+        statements = [s.strip() for s in sql_statements.split(';') 
+                     if s.strip() and ('CREATE' in s.upper() and 'FUNCTION' in s.upper())]
         total = len(statements)
         
         progress(0.3, desc=f"Creating {total} functions...")
@@ -322,7 +324,9 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
         # Replace placeholders
         policies_sql = template.ABAC_POLICIES_SQL.replace("{CATALOG}", catalog).replace("{SCHEMA}", schema)
         
-        statements = [s.strip() for s in policies_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        # Split by semicolon and keep only parts that contain CREATE POLICY
+        statements = [s.strip() for s in policies_sql.split(';') 
+                     if s.strip() and ('CREATE' in s.upper() or 'DROP' in s.upper())]
         total = len(statements)
         
         progress(0.2, desc=f"Creating {total} ABAC policies...")
@@ -381,7 +385,9 @@ def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Reque
         tables_sql = template.TEST_TABLES_SQL.replace("CREATE TABLE IF NOT EXISTS ", f"CREATE TABLE IF NOT EXISTS {catalog}.{schema}.")
         tables_sql = tables_sql.replace("INSERT INTO ", f"INSERT INTO {catalog}.{schema}.")
         
-        statements = [s.strip() for s in tables_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        # Split by semicolon and keep only parts that contain SQL commands
+        statements = [s.strip() for s in tables_sql.split(';') 
+                     if s.strip() and ('CREATE' in s.upper() or 'INSERT' in s.upper())]
         total = len(statements)
         
         progress(0.2, desc=f"Creating test tables...")
@@ -449,7 +455,9 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
         tagging_sql = tagging_sql.replace("ALTER TABLE credit_cards", f"ALTER TABLE {catalog}.{schema}.credit_cards_test")
         tagging_sql = tagging_sql.replace("ALTER TABLE transactions", f"ALTER TABLE {catalog}.{schema}.transactions_test")
         
-        statements = [s.strip() for s in tagging_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        # Split by semicolon and keep only parts that contain ALTER TABLE
+        statements = [s.strip() for s in tagging_sql.split(';') 
+                     if s.strip() and 'ALTER' in s.upper()]
         total = len(statements)
         
         progress(0.2, desc=f"Tagging columns...")
