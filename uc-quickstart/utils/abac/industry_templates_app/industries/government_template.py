@@ -7,8 +7,6 @@ INDUSTRY_DESCRIPTION = "Government data protection with security clearances and 
 
 FUNCTIONS_SQL = """
 -- GOVERNMENT ABAC FUNCTIONS
-USE CATALOG apscat; USE SCHEMA government;
-
 CREATE OR REPLACE FUNCTION mask_ssn_last4(ssn STRING) RETURNS STRING
 COMMENT 'SSN masking' RETURN CASE WHEN ssn IS NULL THEN ssn ELSE CONCAT('XXX-XX-', RIGHT(REPLACE(ssn, '-', ''), 4)) END;
 
@@ -50,9 +48,7 @@ ABAC_POLICIES_SQL = """
 
 TEST_TABLES_SQL = """
 -- GOVERNMENT DATABASE SCHEMA
-USE CATALOG apscat; CREATE SCHEMA IF NOT EXISTS government; USE SCHEMA government;
-
-DROP TABLE IF EXISTS citizens;
+CREATE SCHEMA IF NOT EXISTS government; DROP TABLE IF EXISTS citizens;
 CREATE TABLE citizens (citizen_id STRING, first_name STRING, last_name STRING, ssn STRING,
 address STRING, city STRING, state STRING, zip STRING, PRIMARY KEY (citizen_id)) USING DELTA;
 INSERT INTO citizens VALUES
@@ -81,7 +77,6 @@ UNION ALL SELECT 'licenses', COUNT(*) FROM licenses
 UNION ALL SELECT 'tax_records', COUNT(*) FROM tax_records;
 
 -- GOVERNMENT EXTENDED
-USE CATALOG apscat; USE SCHEMA government;
 DROP TABLE IF EXISTS violations;
 CREATE TABLE violations (violation_id STRING, citizen_id STRING, violation_type STRING, fine DECIMAL(8,2),
 violation_date DATE, PRIMARY KEY (violation_id)) USING DELTA;

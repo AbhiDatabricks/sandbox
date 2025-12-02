@@ -7,9 +7,6 @@ INDUSTRY_DESCRIPTION = "Retail customer data protection and PCI compliance"
 
 FUNCTIONS_SQL = """
 -- RETAIL & E-COMMERCE ABAC FUNCTIONS
-USE CATALOG apscat;
-USE SCHEMA retail;
-
 -- 1. EMAIL MASKING
 CREATE OR REPLACE FUNCTION mask_email(email STRING) RETURNS STRING
 COMMENT 'Mask email local part' RETURN CASE WHEN email IS NULL OR email = '' THEN email
@@ -81,10 +78,7 @@ ABAC_POLICIES_SQL = """
 
 TEST_TABLES_SQL = """
 -- RETAIL DATABASE SCHEMA
-USE CATALOG apscat;
 CREATE SCHEMA IF NOT EXISTS retail;
-USE SCHEMA retail;
-
 DROP TABLE IF EXISTS customers;
 CREATE TABLE customers (customer_id STRING, first_name STRING, last_name STRING, email STRING, phone STRING, 
 address STRING, city STRING, state STRING, zip STRING, created_date DATE, PRIMARY KEY (customer_id)) USING DELTA;
@@ -120,8 +114,6 @@ UNION ALL SELECT 'products', COUNT(*) FROM products
 UNION ALL SELECT 'orders', COUNT(*) FROM orders;
 
 -- RETAIL EXTENDED TABLES
-USE CATALOG apscat; USE SCHEMA retail;
-
 DROP TABLE IF EXISTS order_items;
 CREATE TABLE order_items (item_id STRING, order_id STRING, product_id STRING, quantity INT, 
 unit_price DECIMAL(10,2), PRIMARY KEY (item_id)) USING DELTA;

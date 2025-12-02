@@ -15,9 +15,6 @@ FUNCTIONS_SQL = """
 
 -- CONFIGURATION
 -- REQUIRED: Replace <<your_catalog_name>> with your actual catalog name (e.g., 'apscat', 'main')
-USE CATALOG apscat;
-USE SCHEMA manufacturing;
-
 -- =============================================
 -- MASKING FUNCTIONS
 -- =============================================
@@ -190,9 +187,6 @@ ABAC_POLICIES_SQL = """
 -- MAGIC - `admins` group = Workspace administrators (site leads, managers)
 
 -- Set catalog context
-USE CATALOG apscat;
-USE SCHEMA manufacturing;
-
 -- Verify functions exist
 SHOW FUNCTIONS IN apscat.manufacturing LIKE 'mask_*';
 SHOW FUNCTIONS IN apscat.manufacturing LIKE '%filter%';
@@ -355,9 +349,6 @@ TEST_TABLES_SQL = """
 
 -- CONFIGURATION
 -- REQUIRED: Replace ${CATALOG_NAME} with your actual catalog name
-USE CATALOG apscat;
-USE SCHEMA manufacturing;
-
 -- =============================================
 -- TABLE: assets (master data)
 -- =============================================
@@ -528,9 +519,6 @@ ORDER BY table_name;
 -- =============================================
 -- EXTENDED MANUFACTURING TABLES (5 additional tables with 20+ rows each)
 -- =============================================
-
-USE CATALOG apscat;
-USE SCHEMA manufacturing;
 
 -- =============================================
 -- TABLE 8: MAINTENANCE_EVENTS (25 rows)
@@ -784,9 +772,6 @@ TAG_APPLICATIONS_SQL = """
 -- =============================================
 -- APPLY ABAC TAGS TO MANUFACTURING TABLES
 -- =============================================
-
-USE CATALOG apscat;
-USE SCHEMA manufacturing;
 
 -- =============================================
 -- TAGS FOR: maintenance_events (PII + Cost data)

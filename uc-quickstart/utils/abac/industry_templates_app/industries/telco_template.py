@@ -7,8 +7,6 @@ INDUSTRY_DESCRIPTION = "Telecommunications data protection with subscriber priva
 
 FUNCTIONS_SQL = """
 -- TELCO ABAC FUNCTIONS
-USE CATALOG apscat; USE SCHEMA telco;
-
 CREATE OR REPLACE FUNCTION mask_phone_number(phone STRING) RETURNS STRING
 COMMENT 'Phone masking' RETURN CASE WHEN phone IS NULL THEN phone ELSE CONCAT('XXX-XXX-', RIGHT(phone, 4)) END;
 
@@ -50,9 +48,7 @@ ABAC_POLICIES_SQL = """
 
 TEST_TABLES_SQL = """
 -- TELCO DATABASE SCHEMA
-USE CATALOG apscat; CREATE SCHEMA IF NOT EXISTS telco; USE SCHEMA telco;
-
-DROP TABLE IF EXISTS subscribers;
+CREATE SCHEMA IF NOT EXISTS telco; DROP TABLE IF EXISTS subscribers;
 CREATE TABLE subscribers (subscriber_id STRING, phone_number STRING, email STRING, plan_name STRING,
 monthly_fee DECIMAL(8,2), status STRING, PRIMARY KEY (subscriber_id)) USING DELTA;
 INSERT INTO subscribers VALUES
@@ -81,8 +77,6 @@ UNION ALL SELECT 'call_records', COUNT(*) FROM call_records
 UNION ALL SELECT 'data_usage', COUNT(*) FROM data_usage;
 
 -- TELCO EXTENDED
-USE CATALOG apscat; USE SCHEMA telco;
-
 DROP TABLE IF EXISTS devices;
 CREATE TABLE devices (device_id STRING, subscriber_id STRING, imei STRING, device_model STRING,
 PRIMARY KEY (device_id)) USING DELTA;

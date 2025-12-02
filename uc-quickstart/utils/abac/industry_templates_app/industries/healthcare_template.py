@@ -20,9 +20,6 @@ FUNCTIONS_SQL = """
 -- Therefore, you MUST replace <<your_catalog_name>> with your actual catalog name before execution
 
 -- Set catalog and schema context
-USE CATALOG apscat;
-USE SCHEMA healthcare;
-
 -- =============================================
 -- MASKING FUNCTIONS (9 total)
 -- These transform/hide data values while preserving table structure
@@ -415,9 +412,6 @@ ABAC_POLICIES_SQL = """
 -- - `users` group = Regular healthcare staff (analysts, technicians, clerks)
 -- - `admins` group = Senior staff, managers (full data access)
 
-USE CATALOG apscat;
-USE SCHEMA healthcare;
-
 -- Verify functions exist
 SHOW FUNCTIONS IN apscat.healthcare LIKE 'mask*';
 SHOW FUNCTIONS IN apscat.healthcare LIKE 'filter*';
@@ -547,11 +541,8 @@ TEST_TABLES_SQL = """
 -- Therefore, you MUST replace ${CATALOG_NAME} with your actual catalog name before execution
 
 -- Create and use the target catalog and schema
-USE CATALOG apscat;
 CREATE SCHEMA IF NOT EXISTS healthcare
 COMMENT 'Healthcare data schema for ABAC demonstration and testing';
-USE SCHEMA healthcare;
-
 -- =============================================
 -- TABLE 1: PATIENTS
 -- Primary table containing patient demographics
@@ -948,9 +939,6 @@ TAG_APPLICATIONS_SQL = """
 -- COMMAND ----------
 
 -- Set schema context and verify table existence
-USE CATALOG apscat;
-USE SCHEMA healthcare;
-
 -- Verify tables exist and show their structure
 SHOW TABLES;
 
