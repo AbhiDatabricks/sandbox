@@ -10,6 +10,22 @@ w = WorkspaceClient()
 # Get SQL warehouse ID from environment (injected from app.yaml resource)
 WAREHOUSE_ID = os.getenv("WAREHOUSE_ID")
 
+# If no warehouse ID from resource, show helpful error
+if not WAREHOUSE_ID:
+    import sys
+    print("ERROR: No SQL warehouse configured!")
+    print("Please configure a SQL warehouse resource for this app in Databricks.")
+    print("Go to: Apps → abacindustry → Configuration → Resources")
+    # Try to get any available warehouse as fallback
+    try:
+        warehouses = w.warehouses.list()
+        first_warehouse = next(iter(warehouses), None)
+        if first_warehouse:
+            WAREHOUSE_ID = first_warehouse.id
+            print(f"Using fallback warehouse: {first_warehouse.name} ({WAREHOUSE_ID})")
+    except Exception as e:
+        print(f"Could not find fallback warehouse: {e}")
+
 # Finance SQL functions definition
 FINANCE_FUNCTIONS_SQL = """
 -- Create Finance ABAC Functions
@@ -109,13 +125,13 @@ COMMENT 'Row filter for specific region (CA only example)'
 RETURN state = 'CA';
 """
 
-def execute_sql(sql_query):
+def execute_sql(sql_query, description="SQL query"):
     """Execute SQL using SQL warehouse"""
     try:
         result = w.statement_execution.execute_statement(
             statement=sql_query,
             warehouse_id=WAREHOUSE_ID,
-            wait_timeout="30s"
+            wait_timeout="50s"
         )
         
         if result.status.state == StatementState.SUCCEEDED:
@@ -123,9 +139,14 @@ def execute_sql(sql_query):
                 return result.result.data_array
             return []
         else:
-            raise Exception(f"Query failed: {result.status.state}")
+            error_msg = f"State: {result.status.state}"
+            if result.status.error:
+                error_msg += f"\nError Code: {result.status.error.error_code if hasattr(result.status.error, 'error_code') else 'N/A'}"
+                error_msg += f"\nMessage: {result.status.error.message}"
+            raise Exception(error_msg)
     except Exception as e:
-        raise Exception(f"SQL execution error: {str(e)}")
+        # Don't truncate error messages
+        raise Exception(f"{description}\n{str(e)}")
 
 def get_catalogs():
     """Get list of catalogs from Unity Catalog"""
@@ -159,15 +180,22 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
         
-        progress(0, desc="Setting catalog and schema...")
-        execute_sql(f"USE CATALOG {catalog}")
-        execute_sql(f"USE SCHEMA {schema}")
+        progress(0.1, desc="Verifying schema exists...")
+        # Ensure schema exists
+        try:
+            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema if not exists")
+        except Exception as e:
+            return f"❌ **Error**: Could not create/access schema\n\n{str(e)}"
         
         progress(0.2, desc="Reading function definitions...")
         if industry == "Finance":
             sql_statements = FINANCE_FUNCTIONS_SQL
         else:
             return f"❌ Error: {industry} not implemented yet"
+        
+        # Replace function names with fully qualified names (catalog.schema.function)
+        # This is needed because USE CATALOG/SCHEMA don't persist across Statement Execution API calls
+        sql_statements = sql_statements.replace("CREATE OR REPLACE FUNCTION ", f"CREATE OR REPLACE FUNCTION {catalog}.{schema}.")
         
         # Split by semicolon and execute each statement
         statements = [s.strip() for s in sql_statements.split(';') if s.strip() and not s.strip().startswith('--')]
@@ -181,12 +209,20 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
-                    execute_sql(stmt)
+                    # Extract function name for better logging
+                    func_name = "unknown"
+                    if "CREATE" in stmt.upper() and "FUNCTION" in stmt.upper():
+                        parts = stmt.upper().split("FUNCTION")
+                        if len(parts) > 1:
+                            func_name = parts[1].split("(")[0].strip()
+                    
+                    execute_sql(stmt, f"CREATE FUNCTION {func_name}")
                     success_count += 1
                     progress((0.3 + (0.6 * (idx + 1) / total)), 
                            desc=f"Created function {idx + 1}/{total}")
             except Exception as e:
-                errors.append(f"Statement {idx + 1}: {str(e)[:100]}")
+                error_msg = str(e)
+                errors.append(f"Function {idx + 1} ({func_name}):\n{error_msg[:500]}")
         
         progress(1.0, desc="Complete!")
         
@@ -221,9 +257,14 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
 """
         
         if errors:
-            result += f"\n\n⚠️ **Warnings**: {len(errors)} errors occurred\n"
-            for err in errors[:3]:  # Show first 3 errors
-                result += f"- {err}\n"
+            result += f"\n\n⚠️ **Errors**: {len(errors)} functions failed\n"
+            result += "\n**Error Details:**\n```\n"
+            for idx, err in enumerate(errors[:3], 1):  # Show first 3 full errors
+                result += f"\nError {idx}:\n{err}\n"
+                result += "-" * 80 + "\n"
+            if len(errors) > 3:
+                result += f"\n... and {len(errors) - 3} more errors\n"
+            result += "```"
         
         return result
         
