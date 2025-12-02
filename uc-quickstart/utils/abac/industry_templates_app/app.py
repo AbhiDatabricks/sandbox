@@ -22,25 +22,64 @@ if not WAREHOUSE_ID:
     except Exception as e:
         print(f"Could not find fallback warehouse: {e}")
 
-def execute_sql(sql_query, description="SQL query"):
-    """Execute SQL using SQL warehouse"""
+def execute_sql(sql_query, description="SQL query", user_token=None):
+    """Execute SQL using SQL warehouse
+    
+    Args:
+        sql_query: SQL statement to execute
+        description: Description for error messages
+        user_token: Optional user access token for user authorization
+    """
     try:
-        result = w.statement_execution.execute_statement(
-            statement=sql_query,
-            warehouse_id=WAREHOUSE_ID,
-            wait_timeout="50s"
-        )
-        
-        if result.status.state == StatementState.SUCCEEDED:
-            if result.result and result.result.data_array:
-                return result.result.data_array
-            return []
+        # If user_token provided, use it for user authorization
+        # Otherwise, use service principal (default WorkspaceClient)
+        if user_token:
+            # Use REST API with user token for user authorization
+            workspace_url = w.config.host
+            headers = {
+                "Authorization": f"Bearer {user_token}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "statement": sql_query,
+                "warehouse_id": WAREHOUSE_ID,
+                "wait_timeout": "50s"
+            }
+            response = requests.post(
+                f"{workspace_url}/api/2.0/sql/statements",
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("status", {}).get("state") == "SUCCEEDED":
+                data_array = result.get("result", {}).get("data_array", [])
+                return data_array
+            else:
+                error_info = result.get("status", {}).get("error", {})
+                error_msg = f"State: {result.get('status', {}).get('state')}\n"
+                error_msg += f"Error Code: {error_info.get('error_code', 'N/A')}\n"
+                error_msg += f"Message: {error_info.get('message', 'Unknown error')}"
+                raise Exception(error_msg)
         else:
-            error_msg = f"State: {result.status.state}"
-            if result.status.error:
-                error_msg += f"\nError Code: {result.status.error.error_code if hasattr(result.status.error, 'error_code') else 'N/A'}"
-                error_msg += f"\nMessage: {result.status.error.message}"
-            raise Exception(error_msg)
+            # Use service principal via WorkspaceClient (default)
+            result = w.statement_execution.execute_statement(
+                statement=sql_query,
+                warehouse_id=WAREHOUSE_ID,
+                wait_timeout="50s"
+            )
+            
+            if result.status.state == StatementState.SUCCEEDED:
+                if result.result and result.result.data_array:
+                    return result.result.data_array
+                return []
+            else:
+                error_msg = f"State: {result.status.state}"
+                if result.status.error:
+                    error_msg += f"\nError Code: {result.status.error.error_code if hasattr(result.status.error, 'error_code') else 'N/A'}"
+                    error_msg += f"\nMessage: {result.status.error.message}"
+                raise Exception(error_msg)
     except Exception as e:
         raise Exception(f"{description}\n{str(e)}")
 
@@ -106,15 +145,25 @@ def create_tag_policy(tag_key, description, values, workspace_url, token):
         return False, f"❌ Error: {tag_key} - {str(e)}"
 
 # Step 1: Deploy Functions
-def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
+def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Deploy functions to selected catalog and schema"""
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
         
-        progress(0.1, desc="Verifying schema exists...")
+        # Extract user token if using user authorization
+        user_token = None
+        auth_mode = "Service Principal"
+        if use_user_auth:
+            user_token = request.headers.get("X-Forwarded-Access-Token")
+            if user_token:
+                auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
+            else:
+                return "❌ **Error**: User authorization selected but no access token found"
+        
+        progress(0.1, desc=f"Auth: {auth_mode} | Verifying schema...")
         try:
-            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema")
+            execute_sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}", "Create schema", user_token)
         except Exception as e:
             return f"❌ **Error**: Could not create/access schema\n\n{str(e)}"
         
@@ -145,7 +194,7 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
                         if len(parts) > 1:
                             func_name = parts[1].split("(")[0].strip()
                     
-                    execute_sql(stmt, f"CREATE FUNCTION {func_name}")
+                    execute_sql(stmt, f"CREATE FUNCTION {func_name}", user_token)
                     success_count += 1
                     progress((0.3 + (0.6 * (idx + 1) / total)), 
                            desc=f"Created {idx + 1}/{total}")
@@ -171,13 +220,32 @@ def deploy_functions(catalog, schema, industry, progress=gr.Progress()):
         return f"❌ **Deployment Failed**\n\n{str(e)}"
 
 # Step 2: Create Tag Policies
-def deploy_tag_policies(catalog, schema, industry, progress=gr.Progress()):
+def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Create tag policies for the industry"""
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
         
-        progress(0.05, desc="Loading industry template...")
+        # Extract user token if using user authorization
+        auth_mode = "Service Principal"
+        if use_user_auth:
+            token_str = request.headers.get("X-Forwarded-Access-Token")
+            if token_str:
+                auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
+            else:
+                return "❌ **Error**: User authorization selected but no access token found"
+        else:
+            # Use service principal token
+            token = w.config.authenticate()
+            if not token:
+                return "❌ Error: Could not get authentication token"
+            # Get token string
+            if hasattr(token, 'token'):
+                token_str = token.token()
+            else:
+                token_str = str(token)
+        
+        progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
@@ -185,16 +253,6 @@ def deploy_tag_policies(catalog, schema, industry, progress=gr.Progress()):
         
         progress(0.1, desc="Getting workspace credentials...")
         workspace_url = w.config.host
-        token = w.config.authenticate()
-        
-        if not token:
-            return "❌ Error: Could not get authentication token"
-        
-        # Get token string
-        if hasattr(token, 'token'):
-            token_str = token.token()
-        else:
-            token_str = str(token)
         
         progress(0.2, desc="Creating tag policies...")
         
@@ -222,13 +280,23 @@ def deploy_tag_policies(catalog, schema, industry, progress=gr.Progress()):
         return f"❌ **Tag Policy Creation Failed**\n\n{str(e)}"
 
 # Step 3: Create ABAC Policies
-def deploy_abac_policies(catalog, schema, industry, progress=gr.Progress()):
+def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Create ABAC policies"""
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
         
-        progress(0.05, desc="Loading industry template...")
+        # Extract user token if using user authorization
+        user_token = None
+        auth_mode = "Service Principal"
+        if use_user_auth:
+            user_token = request.headers.get("X-Forwarded-Access-Token")
+            if user_token:
+                auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
+            else:
+                return "❌ **Error**: User authorization selected but no access token found"
+        
+        progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
@@ -250,7 +318,7 @@ def deploy_abac_policies(catalog, schema, industry, progress=gr.Progress()):
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
-                    execute_sql(stmt, f"CREATE POLICY {idx+1}")
+                    execute_sql(stmt, f"CREATE POLICY {idx+1}", user_token)
                     success_count += 1
                     progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Created {idx + 1}/{total}")
             except Exception as e:
@@ -270,13 +338,23 @@ def deploy_abac_policies(catalog, schema, industry, progress=gr.Progress()):
         return f"❌ **ABAC Policy Creation Failed**\n\n{str(e)}"
 
 # Step 4: Create Test Data (Optional)
-def create_test_data(catalog, schema, industry, progress=gr.Progress()):
+def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Create test tables with sample data"""
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
         
-        progress(0.05, desc="Loading industry template...")
+        # Extract user token if using user authorization
+        user_token = None
+        auth_mode = "Service Principal"
+        if use_user_auth:
+            user_token = request.headers.get("X-Forwarded-Access-Token")
+            if user_token:
+                auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
+            else:
+                return "❌ **Error**: User authorization selected but no access token found"
+        
+        progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
@@ -299,7 +377,7 @@ def create_test_data(catalog, schema, industry, progress=gr.Progress()):
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
-                    execute_sql(stmt, f"Table operation {idx+1}")
+                    execute_sql(stmt, f"Table operation {idx+1}", user_token)
                     success_count += 1
                     progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Executed {idx + 1}/{total}")
             except Exception as e:
@@ -320,18 +398,28 @@ def create_test_data(catalog, schema, industry, progress=gr.Progress()):
         return f"❌ **Test Data Creation Failed**\n\n{str(e)}"
 
 # Step 5: Tag Test Data (Optional, conditional)
-def tag_test_data(catalog, schema, industry, progress=gr.Progress()):
+def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Apply tags to test table columns"""
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
+        
+        # Extract user token if using user authorization
+        user_token = None
+        auth_mode = "Service Principal"
+        if use_user_auth:
+            user_token = request.headers.get("X-Forwarded-Access-Token")
+            if user_token:
+                auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
+            else:
+                return "❌ **Error**: User authorization selected but no access token found"
         
         # Check if test tables exist
         exists, test_tables = check_test_tables_exist(catalog, schema)
         if not exists:
             return "⚠️ **No test tables found!**\n\nCreate test data first (Step 4)"
         
-        progress(0.05, desc="Loading industry template...")
+        progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
@@ -357,7 +445,7 @@ def tag_test_data(catalog, schema, industry, progress=gr.Progress()):
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
-                    execute_sql(stmt, f"Tag column {idx+1}")
+                    execute_sql(stmt, f"Tag column {idx+1}", user_token)
                     success_count += 1
                     progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Tagged {idx + 1}/{total}")
             except Exception as e:
@@ -377,18 +465,28 @@ def tag_test_data(catalog, schema, industry, progress=gr.Progress()):
         return f"❌ **Tagging Failed**\n\n{str(e)}"
 
 # Step 6: Test Policies (Optional, conditional)
-def test_policies(catalog, schema, industry, progress=gr.Progress()):
+def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Run test queries to demonstrate ABAC policies"""
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
+        
+        # Extract user token if using user authorization
+        user_token = None
+        auth_mode = "Service Principal"
+        if use_user_auth:
+            user_token = request.headers.get("X-Forwarded-Access-Token")
+            if user_token:
+                auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
+            else:
+                return "❌ **Error**: User authorization selected but no access token found"
         
         # Check if test tables exist
         exists, test_tables = check_test_tables_exist(catalog, schema)
         if not exists:
             return "⚠️ **No test tables found!**\n\nCreate test data first (Step 4)"
         
-        progress(0.1, desc="Loading industry template...")
+        progress(0.1, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
@@ -407,7 +505,7 @@ def test_policies(catalog, schema, industry, progress=gr.Progress()):
         
         for idx, query in enumerate(test_queries):
             try:
-                data = execute_sql(query, f"Test query {idx+1}")
+                data = execute_sql(query, f"Test query {idx+1}", user_token)
                 results.append(f"✅ Query {idx+1} succeeded ({len(data)-1} rows)")
                 progress(0.2 + (0.7 * (idx + 1) / len(test_queries)), desc=f"Tested {idx + 1}/{len(test_queries)}")
             except Exception as e:
@@ -473,6 +571,12 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                 interactive=True
             )
             
+            use_user_auth = gr.Checkbox(
+                label="Use User Authorization",
+                value=False,
+                info="Run as your user (checked) or Service Principal (unchecked)"
+            )
+            
             refresh_btn = gr.Button("🔄 Refresh", size="sm")
         
         with gr.Column():
@@ -534,38 +638,38 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
     # Required steps
     deploy_functions_btn.click(
         fn=deploy_functions,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
         outputs=[output_required]
     )
     
     deploy_tags_btn.click(
         fn=deploy_tag_policies,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
         outputs=[output_required]
     )
     
     deploy_abac_btn.click(
         fn=deploy_abac_policies,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
         outputs=[output_required]
     )
     
     # Optional testing steps
     create_test_btn.click(
         fn=create_test_data,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
         outputs=[output_optional]
     )
     
     tag_test_btn.click(
         fn=tag_test_data,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
         outputs=[output_optional]
     )
     
     test_policies_btn.click(
         fn=test_policies,
-        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown],
+        inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
         outputs=[output_optional]
     )
     
