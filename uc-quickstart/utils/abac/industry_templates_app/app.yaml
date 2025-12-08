@@ -1,17 +1,8 @@
 # Databricks App Configuration
 command: ["gradio", "app.py"]
 
-# SQL Warehouse resource - app can query Unity Catalog
-resources:
-  - key: sql_warehouse
-    type: sql-warehouse
-    permission: CAN_USE
-
 env:
   - name: GRADIO_SERVER_NAME
     value: "0.0.0.0"
   - name: GRADIO_SERVER_PORT
     value: "8000"
-  - name: WAREHOUSE_ID
-    valueFrom: sql_warehouse  # Inject warehouse ID from resource
-

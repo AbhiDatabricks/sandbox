@@ -7,21 +7,17 @@ from industries import get_available_industries, load_industry_template
 from documentation import DOCUMENTATION_MD
 
 # Initialize Databricks client
-w = WorkspaceClient()
+try:
+    w = WorkspaceClient()
+    print(f"WorkspaceClient initialized, host: {w.config.host}")
+except Exception as e:
+    print(f"Error initializing WorkspaceClient: {e}")
+    w = None
 
-# Get SQL warehouse ID from environment (injected from app.yaml resource)
-WAREHOUSE_ID = os.getenv("WAREHOUSE_ID")
+# Hardcode warehouse ID for Azure workspace (most reliable)
+WAREHOUSE_ID = os.getenv("WAREHOUSE_ID") or "b0620c9f66bdeda3"
+print(f"Using WAREHOUSE_ID: {WAREHOUSE_ID}")
 
-# If no warehouse ID from resource, find available warehouse
-if not WAREHOUSE_ID:
-    try:
-        warehouses = w.warehouses.list()
-        first_warehouse = next(iter(warehouses), None)
-        if first_warehouse:
-            WAREHOUSE_ID = first_warehouse.id
-            print(f"Using fallback warehouse: {first_warehouse.name} ({WAREHOUSE_ID})")
-    except Exception as e:
-        print(f"Could not find fallback warehouse: {e}")
 
 def execute_sql(sql_query, description="SQL query", user_token=None):
     """Execute SQL using SQL warehouse
@@ -87,12 +83,25 @@ def execute_sql(sql_query, description="SQL query", user_token=None):
 def get_catalogs():
     """Get list of catalogs from Unity Catalog"""
     try:
+        # Try SDK first (faster and more reliable)
+        catalogs_list = list(w.catalogs.list())
+        catalogs = [c.name for c in catalogs_list if c.name and not c.name.startswith('__')]
+        print(f"Found catalogs via SDK: {catalogs}")
+        if catalogs:
+            return catalogs
+    except Exception as e:
+        print(f"SDK catalog list failed: {e}, trying SQL...")
+    
+    # Fallback to SQL
+    try:
         data = execute_sql("SHOW CATALOGS")
-        if len(data) > 1:
-            catalogs = [row[0] for row in data[1:]]
+        if data:
+            catalogs = [row[0] for row in data if row and row[0] and not row[0].startswith('__')]
+            print(f"Found catalogs via SQL: {catalogs}")
             return catalogs
         return []
     except Exception as e:
+        print(f"Error getting catalogs: {e}")
         return [f"Error: {str(e)}"]
 
 def get_schemas(catalog):
@@ -101,8 +110,9 @@ def get_schemas(catalog):
         return []
     try:
         data = execute_sql(f"SHOW SCHEMAS IN {catalog}")
-        if len(data) > 1:
-            schemas = [row[0] for row in data[1:]]
+        # data_array doesn't include header row
+        if data:
+            schemas = [row[0] for row in data if row and row[0]]
             return schemas
         return []
     except Exception as e:
@@ -138,13 +148,22 @@ def create_tag_policy(tag_key, description, values, use_user_token=False, user_t
                 "Content-Type": "application/json"
             }
         else:
-            # Use WorkspaceClient's default authentication
-            headers = {"Content-Type": "application/json"}
-            # Get auth headers from SDK
-            auth_headers = dict(w.api_client.do("GET", "/api/2.0/preview/scim/v2/Me", raw=True).request.headers)
-            if "Authorization" in auth_headers:
-                headers["Authorization"] = auth_headers["Authorization"]
+            # Use WorkspaceClient's built-in auth via api_client
+            # Make the request through the SDK's api_client which handles auth
+            try:
+                result = w.api_client.do(
+                    "POST",
+                    "/api/2.1/tag-policies",
+                    body=payload
+                )
+                return True, f"✅ Created: {tag_key}"
+            except Exception as api_err:
+                err_str = str(api_err)
+                if "ALREADY_EXISTS" in err_str or "already exists" in err_str.lower():
+                    return True, f"ℹ️  Already exists: {tag_key}"
+                return False, f"❌ Failed: {tag_key} - {err_str[:100]}"
         
+        # Only use requests if we have a user token
         response = requests.post(
             f"{workspace_url}/api/2.1/tag-policies",
             headers=headers,
@@ -461,14 +480,12 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
         
         progress(0.1, desc="Applying tags to test tables...")
         
-        # Replace with catalog.schema.table_test
+        # Replace placeholders with actual catalog and schema
         tagging_sql = template.TAG_APPLICATIONS_SQL
-        tagging_sql = tagging_sql.replace("ALTER TABLE customers", f"ALTER TABLE {catalog}.{schema}.customers_test")
-        tagging_sql = tagging_sql.replace("ALTER TABLE accounts", f"ALTER TABLE {catalog}.{schema}.accounts_test")
-        tagging_sql = tagging_sql.replace("ALTER TABLE credit_cards", f"ALTER TABLE {catalog}.{schema}.credit_cards_test")
-        tagging_sql = tagging_sql.replace("ALTER TABLE transactions", f"ALTER TABLE {catalog}.{schema}.transactions_test")
+        tagging_sql = tagging_sql.replace("{CATALOG}", catalog)
+        tagging_sql = tagging_sql.replace("{SCHEMA}", schema)
         
-        # Split by semicolon and keep only parts that contain ALTER TABLE
+        # Split by semicolon and keep only parts that contain ALTER
         statements = [s.strip() for s in tagging_sql.split(';') 
                      if s.strip() and 'ALTER' in s.upper()]
         total = len(statements)
@@ -542,7 +559,8 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
         for idx, query in enumerate(test_queries):
             try:
                 data = execute_sql(query, f"Test query {idx+1}", user_token)
-                results.append(f"✅ Query {idx+1} succeeded ({len(data)-1} rows)")
+                row_count = len(data) if data else 0
+                results.append(f"✅ Query {idx+1} succeeded ({row_count} rows)")
                 progress(0.2 + (0.7 * (idx + 1) / len(test_queries)), desc=f"Tested {idx + 1}/{len(test_queries)}")
             except Exception as e:
                 results.append(f"⚠️ Query {idx+1} failed: {str(e)[:100]}")
@@ -551,12 +569,14 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
         
         output = f"✅ **Testing Complete!**\n\n📊 **Test Results:**\n\n"
         for r in results:
-            output += f"{r}\n"
+            output += f"{r} "
         
-        output += f"\n**Note:** Check the actual data in Databricks to see masking in action!"
+        output += f"\n\n**Note:** Check the actual data in Databricks to see masking in action!"
         output += f"\n\nQuery your test tables:\n"
         output += f"- `SELECT * FROM {catalog}.{schema}.customers_test`\n"
+        output += f"- `SELECT * FROM {catalog}.{schema}.accounts_test`\n"
         output += f"- `SELECT * FROM {catalog}.{schema}.credit_cards_test`\n"
+        output += f"- `SELECT * FROM {catalog}.{schema}.transactions_test`\n"
         
         return output
         

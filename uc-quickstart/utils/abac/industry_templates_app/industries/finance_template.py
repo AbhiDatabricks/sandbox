@@ -49,39 +49,10 @@ RETURN CONCAT(
     '***'
 );
 
-CREATE OR REPLACE FUNCTION mask_transaction_hash(transaction_id STRING)
-RETURNS STRING
-COMMENT 'Returns deterministic hash of transaction ID'
-RETURN CONCAT('TXN_', SHA2(transaction_id, 256));
-
-CREATE OR REPLACE FUNCTION mask_customer_id_deterministic(customer_id STRING)
-RETURNS STRING
-COMMENT 'Returns deterministic hash for customer ID'
-RETURN CONCAT('CUST_', SUBSTRING(SHA2(customer_id, 256), 1, 12));
-
-CREATE OR REPLACE FUNCTION mask_amount_bucket(amount DECIMAL(18,2))
-RETURNS STRING
-COMMENT 'Buckets transaction amounts into ranges'
-RETURN CASE
-    WHEN amount < 100 THEN '$0-$100'
-    WHEN amount < 500 THEN '$100-$500'
-    WHEN amount < 1000 THEN '$500-$1K'
-    WHEN amount < 5000 THEN '$1K-$5K'
-    WHEN amount < 10000 THEN '$5K-$10K'
-    ELSE '$10K+'
-END;
-
 CREATE OR REPLACE FUNCTION mask_income_bracket(income DECIMAL(18,2))
-RETURNS STRING
-COMMENT 'Buckets annual income into ranges'
-RETURN CASE
-    WHEN income < 30000 THEN 'Under $30K'
-    WHEN income < 50000 THEN '$30K-$50K'
-    WHEN income < 75000 THEN '$50K-$75K'
-    WHEN income < 100000 THEN '$75K-$100K'
-    WHEN income < 150000 THEN '$100K-$150K'
-    ELSE 'Over $150K'
-END;
+RETURNS DECIMAL(18,2)
+COMMENT 'Masks income by rounding to nearest bracket (returns 0 for privacy)'
+RETURN CAST(0 AS DECIMAL(18,2));
 
 CREATE OR REPLACE FUNCTION filter_fraud_flagged_only(fraud_flag BOOLEAN)
 RETURNS BOOLEAN
@@ -92,16 +63,6 @@ CREATE OR REPLACE FUNCTION filter_high_value_transactions(amount DECIMAL(18,2))
 RETURNS BOOLEAN
 COMMENT 'Row filter for transactions over $5000'
 RETURN amount > 5000;
-
-CREATE OR REPLACE FUNCTION filter_business_hours()
-RETURNS BOOLEAN
-COMMENT 'Row filter for business hours (9 AM - 5 PM)'
-RETURN HOUR(CURRENT_TIMESTAMP()) BETWEEN 9 AND 17;
-
-CREATE OR REPLACE FUNCTION filter_by_region(state STRING)
-RETURNS BOOLEAN
-COMMENT 'Row filter for specific region (CA only example)'
-RETURN state = 'CA';
 """
 
 # Step 2: Tag Policy Definitions (tag_key, description, allowed_values)
@@ -121,102 +82,67 @@ TAG_DEFINITIONS = [
 ]
 
 # Step 3: ABAC Policy Definitions
+# Syntax per https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/policies
 ABAC_POLICIES_SQL = """
-CREATE POLICY IF NOT EXISTS card_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_credit_card 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','credit_card') AS card
-  ON COLUMN card;
+-- SSN Column Mask Policy
+CREATE OR REPLACE POLICY ssn_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask SSN columns tagged with pii_type_finance=ssn'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'ssn') AS ssn_col
+ON COLUMN ssn_col;
 
-CREATE POLICY IF NOT EXISTS account_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_account_last4 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','account') AS account
-  ON COLUMN account;
+-- Email Column Mask Policy
+CREATE OR REPLACE POLICY email_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask email columns tagged with pii_type_finance=email'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_email
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'email') AS email_col
+ON COLUMN email_col;
 
-CREATE POLICY IF NOT EXISTS ssn_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','ssn') AS ssn
-  ON COLUMN ssn;
+-- Phone Column Mask Policy
+CREATE OR REPLACE POLICY phone_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask phone columns tagged with pii_type_finance=phone'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'phone') AS phone_col
+ON COLUMN phone_col;
 
-CREATE POLICY IF NOT EXISTS email_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_email 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','email') AS email
-  ON COLUMN email;
+-- Credit Card Column Mask Policy
+CREATE OR REPLACE POLICY card_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask credit card columns tagged with pii_type_finance=credit_card'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_credit_card
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'credit_card') AS card_col
+ON COLUMN card_col;
 
-CREATE POLICY IF NOT EXISTS phone_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','phone') AS phone
-  ON COLUMN phone;
+-- Account Number Column Mask Policy
+CREATE OR REPLACE POLICY account_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask account columns tagged with pii_type_finance=account'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_account_last4
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'account') AS account_col
+ON COLUMN account_col;
 
-CREATE POLICY IF NOT EXISTS routing_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_routing_number 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','routing_number') AS routing
-  ON COLUMN routing;
-
-CREATE POLICY IF NOT EXISTS ip_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_ip_address 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','ip_address') AS ip
-  ON COLUMN ip;
-
-CREATE POLICY IF NOT EXISTS transaction_id_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_transaction_hash 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','transaction_id') AS txn_id
-  ON COLUMN txn_id;
-
-CREATE POLICY IF NOT EXISTS customer_id_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_customer_id_deterministic 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','id') AS cust_id
-  ON COLUMN cust_id;
-
-CREATE POLICY IF NOT EXISTS amount_bucket ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_amount_bucket 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','transaction_amount') AS amount
-  ON COLUMN amount;
-
-CREATE POLICY IF NOT EXISTS income_bracket ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_income_bracket 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','income') AS income
-  ON COLUMN income;
-
-CREATE POLICY IF NOT EXISTS fraud_filter ON SCHEMA {SCHEMA}
-  ROW FILTER {CATALOG}.{SCHEMA}.filter_fraud_flagged_only
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTag('fraud_detection_finance') AS fraud
-  USING COLUMNS (fraud);
-
-CREATE POLICY IF NOT EXISTS high_value_filter ON SCHEMA {SCHEMA}
-  ROW FILTER {CATALOG}.{SCHEMA}.filter_high_value_transactions
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','transaction_amount') AS amount
-  USING COLUMNS (amount);
-
-CREATE POLICY IF NOT EXISTS business_hours_filter ON SCHEMA {SCHEMA}
-  ROW FILTER {CATALOG}.{SCHEMA}.filter_business_hours
-  TO `account users`
-  FOR TABLES;
+-- Income Bracket Column Mask Policy
+CREATE OR REPLACE POLICY income_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask income columns tagged with pii_type_finance=income'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_income_bracket
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'income') AS income_col
+ON COLUMN income_col;
 """
 
 # Step 4: Test Table Creation (Optional - with _test suffix)
@@ -302,144 +228,21 @@ INSERT INTO transactions_test VALUES
 ('TXN-10006', NULL, 'CC-8001', 'C-1001', 'Credit', 8500.00, 'Suspicious Merchant', 'Unknown', timestamp('2024-03-05 02:15:00'), '203.0.113.0', 'Desktop', true, 'Flagged');
 """
 
-# Step 2: Tag Policy Definitions (tag_key, description, allowed_values)
-TAG_DEFINITIONS = [
-    ("pii_type_finance", "PII field types for finance industry", 
-     ["ssn", "email", "location", "phone", "income", "account", "routing_number", 
-      "ip_address", "credit_card", "transaction_amount", "transaction_id", "id"]),
-    
-    ("pci_compliance_finance", "PCI-DSS compliance requirement for finance",
-     ["Required", "Not_Required"]),
-    
-    ("data_classification_finance", "Data classification level for finance",
-     ["Confidential", "Internal", "Public"]),
-    
-    ("fraud_detection_finance", "Fraud detection flag for finance",
-     ["true", "false"])
-]
-
-# Step 3: ABAC Policy Definitions
-ABAC_POLICIES_SQL = """
-CREATE POLICY IF NOT EXISTS card_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_credit_card 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','credit_card') AS card
-  ON COLUMN card;
-
-CREATE POLICY IF NOT EXISTS account_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_account_last4 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','account') AS account
-  ON COLUMN account;
-
-CREATE POLICY IF NOT EXISTS ssn_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','ssn') AS ssn
-  ON COLUMN ssn;
-
-CREATE POLICY IF NOT EXISTS email_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_email 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','email') AS email
-  ON COLUMN email;
-
-CREATE POLICY IF NOT EXISTS phone_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','phone') AS phone
-  ON COLUMN phone;
-
-CREATE POLICY IF NOT EXISTS routing_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_routing_number 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','routing_number') AS routing
-  ON COLUMN routing;
-
-CREATE POLICY IF NOT EXISTS ip_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_ip_address 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','ip_address') AS ip
-  ON COLUMN ip;
-
-CREATE POLICY IF NOT EXISTS transaction_id_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_transaction_hash 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','transaction_id') AS txn_id
-  ON COLUMN txn_id;
-
-CREATE POLICY IF NOT EXISTS customer_id_mask ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_customer_id_deterministic 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','id') AS cust_id
-  ON COLUMN cust_id;
-
-CREATE POLICY IF NOT EXISTS amount_bucket ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_amount_bucket 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','transaction_amount') AS amount
-  ON COLUMN amount;
-
-CREATE POLICY IF NOT EXISTS income_bracket ON SCHEMA {SCHEMA}
-  COLUMN MASK {CATALOG}.{SCHEMA}.mask_income_bracket 
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','income') AS income
-  ON COLUMN income;
-
-CREATE POLICY IF NOT EXISTS fraud_filter ON SCHEMA {SCHEMA}
-  ROW FILTER {CATALOG}.{SCHEMA}.filter_fraud_flagged_only
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTag('fraud_detection_finance') AS fraud
-  USING COLUMNS (fraud);
-
-CREATE POLICY IF NOT EXISTS high_value_filter ON SCHEMA {SCHEMA}
-  ROW FILTER {CATALOG}.{SCHEMA}.filter_high_value_transactions
-  TO `account users`
-  FOR TABLES
-  MATCH COLUMNS hasTagValue('pii_type_finance','transaction_amount') AS amount
-  USING COLUMNS (amount);
-
-CREATE POLICY IF NOT EXISTS business_hours_filter ON SCHEMA {SCHEMA}
-  ROW FILTER {CATALOG}.{SCHEMA}.filter_business_hours
-  TO `account users`
-  FOR TABLES;
-"""
-
 # Step 5: Tag Applications (Optional - for test tables only)
+# Uses {CATALOG}.{SCHEMA} placeholders for fully qualified names
 TAG_APPLICATIONS_SQL = """
-ALTER TABLE customers ALTER COLUMN ssn SET TAGS ('pii_type_finance' = 'ssn', 'pci_compliance_finance' = 'Required');
-ALTER TABLE customers ALTER COLUMN email SET TAGS ('pii_type_finance' = 'email');
-ALTER TABLE customers ALTER COLUMN phone SET TAGS ('pii_type_finance' = 'phone');
-ALTER TABLE customers ALTER COLUMN state SET TAGS ('pii_type_finance' = 'location');
-ALTER TABLE customers ALTER COLUMN annual_income SET TAGS ('pii_type_finance' = 'income', 'data_classification_finance' = 'Confidential');
-ALTER TABLE customers ALTER COLUMN customer_id SET TAGS ('pii_type_finance' = 'id');
+ALTER TABLE {CATALOG}.{SCHEMA}.customers_test ALTER COLUMN ssn SET TAGS ('pii_type_finance' = 'ssn', 'pci_compliance_finance' = 'Required');
+ALTER TABLE {CATALOG}.{SCHEMA}.customers_test ALTER COLUMN email SET TAGS ('pii_type_finance' = 'email');
+ALTER TABLE {CATALOG}.{SCHEMA}.customers_test ALTER COLUMN phone SET TAGS ('pii_type_finance' = 'phone');
+ALTER TABLE {CATALOG}.{SCHEMA}.customers_test ALTER COLUMN annual_income SET TAGS ('pii_type_finance' = 'income', 'data_classification_finance' = 'Confidential');
 
-ALTER TABLE accounts ALTER COLUMN account_number SET TAGS ('pii_type_finance' = 'account', 'data_classification_finance' = 'Confidential');
-ALTER TABLE accounts ALTER COLUMN routing_number SET TAGS ('pii_type_finance' = 'routing_number', 'data_classification_finance' = 'Confidential');
-ALTER TABLE accounts ALTER COLUMN customer_id SET TAGS ('pii_type_finance' = 'id');
+ALTER TABLE {CATALOG}.{SCHEMA}.accounts_test ALTER COLUMN account_number SET TAGS ('pii_type_finance' = 'account', 'data_classification_finance' = 'Confidential');
 
-ALTER TABLE credit_cards ALTER COLUMN card_number SET TAGS ('pii_type_finance' = 'credit_card', 'pci_compliance_finance' = 'Required');
-ALTER TABLE credit_cards ALTER COLUMN customer_id SET TAGS ('pii_type_finance' = 'id');
+ALTER TABLE {CATALOG}.{SCHEMA}.credit_cards_test ALTER COLUMN card_number SET TAGS ('pii_type_finance' = 'credit_card', 'pci_compliance_finance' = 'Required');
 
-ALTER TABLE transactions ALTER COLUMN ip_address SET TAGS ('pii_type_finance' = 'ip_address');
-ALTER TABLE transactions ALTER COLUMN amount SET TAGS ('pii_type_finance' = 'transaction_amount');
-ALTER TABLE transactions ALTER COLUMN customer_id SET TAGS ('pii_type_finance' = 'id');
-ALTER TABLE transactions ALTER COLUMN transaction_id SET TAGS ('pii_type_finance' = 'transaction_id');
-ALTER TABLE transactions ALTER COLUMN fraud_flag SET TAGS ('fraud_detection_finance' = 'true');
+ALTER TABLE {CATALOG}.{SCHEMA}.transactions_test ALTER COLUMN ip_address SET TAGS ('pii_type_finance' = 'ip_address');
+ALTER TABLE {CATALOG}.{SCHEMA}.transactions_test ALTER COLUMN amount SET TAGS ('pii_type_finance' = 'transaction_amount');
 """
 
 # List of test tables created
 TEST_TABLES = ["customers_test", "accounts_test", "credit_cards_test", "transactions_test"]
-
