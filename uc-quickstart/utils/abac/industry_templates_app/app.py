@@ -120,8 +120,8 @@ def check_test_tables_exist(catalog, schema):
     except:
         return False, []
 
-def create_tag_policy(tag_key, description, values, workspace_url, token):
-    """Create a tag policy via REST API"""
+def create_tag_policy(tag_key, description, values, use_user_token=False, user_token=None):
+    """Create a tag policy via REST API using WorkspaceClient's built-in auth"""
     payload = {
         "tag_key": tag_key,
         "description": description,
@@ -129,19 +129,44 @@ def create_tag_policy(tag_key, description, values, workspace_url, token):
     }
     
     try:
+        workspace_url = w.config.host.rstrip('/')
+        
+        # Build headers - use user token if provided, else use service principal
+        if use_user_token and user_token:
+            headers = {
+                "Authorization": f"Bearer {user_token}",
+                "Content-Type": "application/json"
+            }
+        else:
+            # Use WorkspaceClient's default authentication
+            headers = {"Content-Type": "application/json"}
+            # Get auth headers from SDK
+            auth_headers = dict(w.api_client.do("GET", "/api/2.0/preview/scim/v2/Me", raw=True).request.headers)
+            if "Authorization" in auth_headers:
+                headers["Authorization"] = auth_headers["Authorization"]
+        
         response = requests.post(
             f"{workspace_url}/api/2.1/tag-policies",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
             json=payload
         )
-        result = response.json()
         
+        # Handle empty responses
         if response.status_code == 200:
             return True, f"✅ Created: {tag_key}"
-        elif response.status_code == 409 or result.get('error_code') == 'ALREADY_EXISTS':
-            return True, f"ℹ️  Already exists: {tag_key}"
-        else:
-            return False, f"❌ Failed: {tag_key} - {result.get('message', 'Unknown error')}"
+        
+        # Try to parse JSON response for errors
+        try:
+            result = response.json()
+            if response.status_code == 409 or result.get('error_code') == 'ALREADY_EXISTS':
+                return True, f"ℹ️  Already exists: {tag_key}"
+            else:
+                return False, f"❌ Failed: {tag_key} - {result.get('message', response.text[:100])}"
+        except:
+            if response.status_code == 409:
+                return True, f"ℹ️  Already exists: {tag_key}"
+            return False, f"❌ Failed: {tag_key} - HTTP {response.status_code}: {response.text[:100]}"
+            
     except Exception as e:
         return False, f"❌ Error: {tag_key} - {str(e)}"
 
@@ -244,23 +269,14 @@ def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Re
             return "❌ Error: Please select catalog, schema, and industry"
         
         # Extract user token if using user authorization
+        user_token = None
         auth_mode = "Service Principal"
         if use_user_auth:
-            token_str = request.headers.get("X-Forwarded-Access-Token")
-            if token_str:
+            user_token = request.headers.get("X-Forwarded-Access-Token")
+            if user_token:
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        else:
-            # Use service principal token
-            token = w.config.authenticate()
-            if not token:
-                return "❌ Error: Could not get authentication token"
-            # Get token string
-            if hasattr(token, 'token'):
-                token_str = token.token()
-            else:
-                token_str = str(token)
         
         progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
@@ -268,16 +284,13 @@ def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Re
         except ValueError as e:
             return f"❌ Error: {str(e)}"
         
-        progress(0.1, desc="Getting workspace credentials...")
-        workspace_url = w.config.host
-        
         progress(0.2, desc="Creating tag policies...")
         
         results = []
         success_count = 0
         
         for idx, (tag_key, desc, values) in enumerate(template.TAG_DEFINITIONS):
-            success, msg = create_tag_policy(tag_key, desc, values, workspace_url, token_str)
+            success, msg = create_tag_policy(tag_key, desc, values, use_user_auth, user_token)
             results.append(msg)
             if success:
                 success_count += 1
