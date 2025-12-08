@@ -455,5 +455,316 @@ For questions or issues, contact your Databricks account team or file an issue o
 **Version:** 1.0  
 **Last Updated:** December 2025  
 **Supported Industries:** Finance, Healthcare, Manufacturing, Retail, Telco, Government
+
+---
+
+# 💰 Finance Industry - Complete Reference
+
+## 📋 Functions (Step 1)
+
+### Masking Functions
+
+#### 1. mask_credit_card
+```sql
+CREATE OR REPLACE FUNCTION mask_credit_card(card_number STRING)
+RETURNS STRING
+COMMENT 'Masks credit card number showing only last 4 digits'
+RETURN CONCAT('****-****-****-', SUBSTRING(card_number, -4, 4));
+
+-- Example: '4532-1234-5678-9010' → '****-****-****-9010'
+```
+
+#### 2. mask_ssn_last4
+```sql
+CREATE OR REPLACE FUNCTION mask_ssn_last4(ssn STRING)
+RETURNS STRING
+COMMENT 'Masks SSN showing only last 4 digits'
+RETURN CONCAT('***-**-', SUBSTRING(ssn, -4, 4));
+
+-- Example: '123-45-6789' → '***-**-6789'
+```
+
+#### 3. mask_email
+```sql
+CREATE OR REPLACE FUNCTION mask_email(email STRING)
+RETURNS STRING
+COMMENT 'Masks email local part, shows domain'
+RETURN CONCAT('***@', SPLIT(email, '@')[1]);
+
+-- Example: 'john.smith@company.com' → '***@company.com'
+```
+
+#### 4. mask_phone
+```sql
+CREATE OR REPLACE FUNCTION mask_phone(phone STRING)
+RETURNS STRING
+COMMENT 'Masks phone number showing only last 4 digits'
+RETURN CONCAT('***-***-', SUBSTRING(phone, -4, 4));
+
+-- Example: '234-555-0101' → '***-***-0101'
+```
+
+#### 5. mask_account_last4
+```sql
+CREATE OR REPLACE FUNCTION mask_account_last4(account_number STRING)
+RETURNS STRING
+COMMENT 'Masks account number showing only last 4 digits'
+RETURN CONCAT('********', SUBSTRING(account_number, -4, 4));
+
+-- Example: '1001234567' → '********4567'
+```
+
+#### 6. mask_routing_number
+```sql
+CREATE OR REPLACE FUNCTION mask_routing_number(routing_number STRING)
+RETURNS STRING
+COMMENT 'Masks routing number showing only last 2 digits'
+RETURN CONCAT('*******', SUBSTRING(routing_number, -2, 2));
+
+-- Example: '021000021' → '*******21'
+```
+
+#### 7. mask_ip_address
+```sql
+CREATE OR REPLACE FUNCTION mask_ip_address(ip STRING)
+RETURNS STRING
+COMMENT 'Masks IP address to subnet level'
+RETURN CONCAT(SPLIT(ip, '\\.')[0], '.', SPLIT(ip, '\\.')[1], '.', '***', '.', '***');
+
+-- Example: '192.168.1.100' → '192.168.***.***'
+```
+
+#### 8. mask_income_bracket
+```sql
+CREATE OR REPLACE FUNCTION mask_income_bracket(income DECIMAL(18,2))
+RETURNS DECIMAL(18,2)
+COMMENT 'Masks income by returning 0 for privacy'
+RETURN CAST(0 AS DECIMAL(18,2));
+
+-- Example: 75000.00 → 0.00
+```
+
+### Row Filter Functions
+
+#### 9. filter_fraud_flagged_only
+```sql
+CREATE OR REPLACE FUNCTION filter_fraud_flagged_only(fraud_flag BOOLEAN)
+RETURNS BOOLEAN
+COMMENT 'Row filter to show only fraud-flagged transactions'
+RETURN fraud_flag = TRUE;
+
+-- Use Case: Compliance team sees only suspicious transactions
+```
+
+#### 10. filter_high_value_transactions
+```sql
+CREATE OR REPLACE FUNCTION filter_high_value_transactions(amount DECIMAL(18,2))
+RETURNS BOOLEAN
+COMMENT 'Row filter for transactions over $5000'
+RETURN amount > 5000;
+
+-- Use Case: Managers see only high-value transactions requiring approval
+```
+
+---
+
+## 🏷️ Tag Policies (Step 2)
+
+Tag policies are defined at the **account level** and define what tags can be applied.
+
+### pii_type_finance
+```
+Tag Key: pii_type_finance
+Description: PII field types for finance industry
+Allowed Values:
+  - ssn
+  - email
+  - location
+  - phone
+  - income
+  - account
+  - routing_number
+  - ip_address
+  - credit_card
+  - transaction_amount
+  - transaction_id
+  - id
+```
+
+### pci_compliance_finance
+```
+Tag Key: pci_compliance_finance
+Description: PCI-DSS compliance requirement for finance
+Allowed Values:
+  - Required
+  - Not_Required
+```
+
+### data_classification_finance
+```
+Tag Key: data_classification_finance
+Description: Data classification level for finance
+Allowed Values:
+  - Confidential
+  - Internal
+  - Public
+```
+
+### fraud_detection_finance
+```
+Tag Key: fraud_detection_finance
+Description: Fraud detection flag for finance
+Allowed Values:
+  - true
+  - false
+```
+
+---
+
+## 🔐 ABAC Policies (Step 3)
+
+ABAC policies apply masking functions based on column tags.
+
+### Column Mask Policies
+
+#### 1. ssn_mask
+```sql
+CREATE OR REPLACE POLICY ssn_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask SSN columns tagged with pii_type_finance=ssn'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'ssn') AS ssn_col
+ON COLUMN ssn_col;
+```
+**Effect:** Any column tagged `pii_type_finance = 'ssn'` shows `***-**-XXXX`
+
+#### 2. email_mask
+```sql
+CREATE OR REPLACE POLICY email_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask email columns tagged with pii_type_finance=email'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_email
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'email') AS email_col
+ON COLUMN email_col;
+```
+**Effect:** Any column tagged `pii_type_finance = 'email'` shows `***@domain.com`
+
+#### 3. phone_mask
+```sql
+CREATE OR REPLACE POLICY phone_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask phone columns tagged with pii_type_finance=phone'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'phone') AS phone_col
+ON COLUMN phone_col;
+```
+**Effect:** Any column tagged `pii_type_finance = 'phone'` shows `***-***-XXXX`
+
+#### 4. card_mask
+```sql
+CREATE OR REPLACE POLICY card_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask credit card columns tagged with pii_type_finance=credit_card'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_credit_card
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'credit_card') AS card_col
+ON COLUMN card_col;
+```
+**Effect:** Any column tagged `pii_type_finance = 'credit_card'` shows `****-****-****-XXXX`
+
+#### 5. account_mask
+```sql
+CREATE OR REPLACE POLICY account_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask account columns tagged with pii_type_finance=account'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_account_last4
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'account') AS account_col
+ON COLUMN account_col;
+```
+**Effect:** Any column tagged `pii_type_finance = 'account'` shows `********XXXX`
+
+#### 6. income_mask
+```sql
+CREATE OR REPLACE POLICY income_mask
+ON SCHEMA {CATALOG}.{SCHEMA}
+COMMENT 'Mask income columns tagged with pii_type_finance=income'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_income_bracket
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('pii_type_finance', 'income') AS income_col
+ON COLUMN income_col;
+```
+**Effect:** Any column tagged `pii_type_finance = 'income'` shows `0.00`
+
+---
+
+## 📊 Test Tables (Step 4)
+
+### customers_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| customer_id | STRING | pii_type_finance = 'id' |
+| first_name | STRING | - |
+| last_name | STRING | - |
+| ssn | STRING | pii_type_finance = 'ssn', pci_compliance_finance = 'Required' |
+| email | STRING | pii_type_finance = 'email' |
+| phone | STRING | pii_type_finance = 'phone' |
+| annual_income | DECIMAL | pii_type_finance = 'income', data_classification_finance = 'Confidential' |
+
+### accounts_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| account_id | STRING | - |
+| customer_id | STRING | pii_type_finance = 'id' |
+| account_number | STRING | pii_type_finance = 'account', data_classification_finance = 'Confidential' |
+| routing_number | STRING | pii_type_finance = 'routing_number' |
+| balance | DECIMAL | - |
+
+### credit_cards_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| card_id | STRING | - |
+| customer_id | STRING | pii_type_finance = 'id' |
+| card_number | STRING | pii_type_finance = 'credit_card', pci_compliance_finance = 'Required' |
+| credit_limit | DECIMAL | - |
+
+### transactions_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| transaction_id | STRING | pii_type_finance = 'transaction_id' |
+| customer_id | STRING | pii_type_finance = 'id' |
+| amount | DECIMAL | pii_type_finance = 'transaction_amount' |
+| ip_address | STRING | pii_type_finance = 'ip_address' |
+| fraud_flag | BOOLEAN | fraud_detection_finance = 'true' |
+
+---
+
+## ✅ Compliance Mapping
+
+| Regulation | How ABAC Helps |
+|------------|----------------|
+| **PCI-DSS** | Credit card & account numbers masked, tagged with `pci_compliance_finance = 'Required'` |
+| **GLBA** | Customer financial data protected, income/account details masked |
+| **SOX** | Audit trail via ABAC policies, role-based access to financial data |
+| **GDPR** | Email/phone masking, right to be forgotten supported by tags |
+| **CCPA** | PII columns identified and masked for California residents |
+
+---
+
+## 🔗 Quick Links
+
+- [ABAC Overview](https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/)
+- [Create ABAC Policies](https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/policies)
+- [Governed Tags](https://docs.databricks.com/aws/en/data-governance/unity-catalog/tags.html)
+- [UDFs in Unity Catalog](https://docs.databricks.com/sql/language-manual/sql-ref-functions-udf.html)
 """
 
