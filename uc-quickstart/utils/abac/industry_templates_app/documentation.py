@@ -50,19 +50,50 @@ DOCUMENTATION_MD = """
 Before using this app, ensure you have:
 
 ✅ **Unity Catalog enabled** in your Databricks workspace  
-✅ **Permissions** to create:
-   - Functions in target catalog/schema
-   - Tag policies (account-level admin for Step 2)
-   - ABAC policies on schemas
-   - Tables in target catalog/schema \n
 ✅ **SQL Warehouse** configured (app uses this for execution)  
-✅ **Target catalog and schema** (or permission to create new schema) \n
-✅ **Permissions** to grant the above priveleges to the app service principal
+✅ **Target catalog and schema** (or permission to create new schema)  
+✅ **Permissions** to create/manage resources in the target catalog/schema:
+   - Functions in the target schema (Step 1)
+   - ABAC policies on the schema (Step 3, requires `MANAGE` on schema)
+   - Tables in the target schema (optional Step 4)
+✅ **Permissions** to grant the above privileges to the app service principal:
   - grant use catalog on catalog CATALOG to `SP-ID`;
   - grant use schema on schema CATALOG.SCHEMA to `SP-ID`;
   - grant create function on schema CATALOG.SCHEMA to `SP-ID`;
   - grant create table on schema CATALOG.SCHEMA to `SP-ID`;
 
+
+### Required Permissions by Step
+
+| Step | Permission Required | Who Grants It | SQL Command |
+|------|---------------------|---------------|-------------|
+| **Step 1: Functions** | `CREATE FUNCTION` on schema | Catalog Owner or Metastore Admin | `GRANT CREATE FUNCTION ON SCHEMA catalog.schema TO \`app-SP\`;` |
+| **Step 2: Tag Policies** | **Account Admin** for the App's Service Principal | Account Admin (via Account Console) | Go to Account Console → Users → Find App SP → Add "Account Admin" role |
+| **Step 3: ABAC Policies** | `MANAGE` on schema | Catalog Owner or Metastore Admin | `GRANT MANAGE ON SCHEMA catalog.schema TO \`app-SP\`;` |
+| **Step 4: Test Data** | `CREATE TABLE` on schema | Catalog Owner | `GRANT CREATE TABLE ON SCHEMA catalog.schema TO \`app-SP\`;` |
+| **Step 5: Tag Data** | `APPLY TAG` on tables | Catalog Owner | `GRANT APPLY TAG ON TABLE catalog.schema.* TO \`app-SP\`;` |
+
+### ⚠️ Important: Step 2 Requires Account Admin
+
+**Step 2 (Create Tag Policies)** requires the App's Service Principal to have **Account Admin** role. This is because tag policies are created at the **account level**, not the workspace level.
+
+**To grant Account Admin to the App's Service Principal:**
+
+1. Go to **Account Console** (accounts.cloud.databricks.com or accounts.azuredatabricks.net)
+2. Navigate to **User management** → **Service principals**
+3. Find the service principal named `app-XXXX <your-app-name>` (e.g., `app-39ck4z abacindustry`)
+4. Click on the service principal → **Roles** tab
+5. Add the **Account Admin** role
+
+**Without this permission, Step 2 will fail** with: `"Provided OAuth token does not have required scopes"`
+
+### Finding the App's Service Principal
+
+When a Databricks App is created, it automatically gets a service principal. You can find it by:
+
+1. **From the App page:** Go to your App → Settings → The SP name is shown as "Service Principal"
+2. **From CLI:** `databricks apps get <app-name>` - look for `service_principal_name`
+3. **Pattern:** Usually named `app-XXXXX <app-name>`
 
 ### Quick Start (5 Minutes)
 
@@ -219,6 +250,31 @@ LIMIT 5;
 
 ## 🏭 Industry Templates
 
+### Default ⭐ (Recommended Starting Point)
+**Use Cases:** Generic template applicable to any industry
+
+**Functions:**
+- SSN masking (last 4 digits)
+- Email masking (domain visible)
+- Phone masking (last 4 digits)
+- Credit card masking (last 4 digits)
+- Account number masking
+- ID hashing (deterministic)
+- IP address masking
+- Amount bucketing
+- Business hours filter
+- High value filter
+
+**Tags:**
+- `pii_type` - Generic PII field types
+- `data_classification` - Data classification levels
+- `compliance_type` - Compliance requirements (PCI, HIPAA, GDPR, SOX)
+- `sensitivity_level` - Data sensitivity levels
+
+**ABAC Policies:** 6 policies (SSN, email, phone, credit card, account, ID)
+
+---
+
 ### Finance ✅ Complete
 **Use Cases:** Banking, credit cards, payment processing
 
@@ -239,7 +295,27 @@ LIMIT 5;
 
 ---
 
-### Healthcare ✅ Complete
+### Insurance ✅ Complete
+**Use Cases:** Insurance policies, claims processing, underwriting
+
+**Functions:**
+- SSN masking (last 4 digits)
+- Policy number masking (last 4 digits)
+- Claim amount bucketing
+- Policyholder ID hashing (deterministic for joins)
+- Email/phone masking
+- Business hours filter
+- High value claims filter
+
+**Tags:**
+- `pii_type_insurance` - PII field types (ssn, email, phone, policy_number, amount, id)
+- `data_classification_insurance` - Data classification (Confidential, Internal, Public)
+
+**ABAC Policies:** 6 policies (SSN, policy number, email, phone, policyholder ID, high-value claims filter)
+
+---
+
+### Healthcare ⚙️ Partial
 **Use Cases:** Hospitals, medical records, HIPAA compliance
 
 **Functions:**
@@ -259,7 +335,7 @@ LIMIT 5;
 
 ---
 
-### Manufacturing ✅ Complete
+### Manufacturing ⚙️ Partial
 **Use Cases:** Product design, supply chain, trade secrets
 
 **Functions:**
@@ -459,9 +535,279 @@ For questions or issues, contact your Databricks account team or file an issue o
 
 ---
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Last Updated:** December 2025  
-**Supported Industries:** Finance, Healthcare, Manufacturing, Retail, Telco, Government
+**Supported Industries:** Default, Finance, Insurance, Healthcare, Manufacturing, Retail, Telco, Government
+
+---
+
+# 🛡️ Insurance Industry - Complete Reference
+
+## 📋 Functions (Step 1)
+
+### Masking Functions
+
+#### 1. mask_ssn_last4
+```sql
+CREATE OR REPLACE FUNCTION mask_ssn_last4(ssn STRING) 
+RETURNS STRING
+COMMENT 'ABAC utility: Mask SSN showing last 4 digits (XXX-XX-1234)'
+RETURN CASE 
+  WHEN ssn IS NULL THEN ssn 
+  ELSE CONCAT('XXX-XX-', RIGHT(REPLACE(ssn, '-', ''), 4)) 
+END;
+
+-- Example: '123-45-6789' → 'XXX-XX-6789'
+```
+
+#### 2. mask_policy_number_last4
+```sql
+CREATE OR REPLACE FUNCTION mask_policy_number_last4(policy STRING) 
+RETURNS STRING
+COMMENT 'ABAC utility: Mask policy number showing last 4 digits'
+RETURN CASE 
+  WHEN policy IS NULL THEN policy 
+  ELSE CONCAT('****', RIGHT(policy, 4)) 
+END;
+
+-- Example: '172123456' → '****3456'
+```
+
+#### 3. mask_claim_amount_bucket
+```sql
+CREATE OR REPLACE FUNCTION mask_claim_amount_bucket(amt DECIMAL(12,2))
+RETURNS STRING
+COMMENT 'ABAC utility: Bucket claim amounts into ranges' 
+RETURN CASE 
+  WHEN amt IS NULL THEN 'Unknown' 
+  WHEN amt < 1000 THEN '$0-$1K'
+  WHEN amt < 5000 THEN '$1K-$5K' 
+  WHEN amt < 10000 THEN '$5K-$10K' 
+  ELSE '$10K+' 
+END;
+
+-- Example: 8500.00 → '$5K-$10K'
+```
+
+#### 4. mask_policyholder_id_hash
+```sql
+CREATE OR REPLACE FUNCTION mask_policyholder_id_hash(id STRING) 
+RETURNS STRING
+COMMENT 'ABAC utility: Deterministic policy holder ID masking for joins'
+RETURN CONCAT('PH_', SUBSTRING(SHA2(id, 256), 1, 12));
+
+-- Example: 'PH-1001' → 'PH_a1b2c3d4e5f6'
+-- Note: Same input always produces same output (for joins)
+```
+
+#### 5. mask_email
+```sql
+CREATE OR REPLACE FUNCTION mask_email(email STRING)
+RETURNS STRING
+COMMENT 'ABAC utility: Mask email local part'
+RETURN CASE 
+  WHEN email IS NULL OR email = '' THEN email
+  WHEN email NOT LIKE '%@%' THEN '****'
+  ELSE CONCAT('****@', SPLIT(email, '@')[1])
+END;
+
+-- Example: 'john@email.com' → '****@email.com'
+```
+
+#### 6. mask_phone
+```sql
+CREATE OR REPLACE FUNCTION mask_phone(phone STRING)
+RETURNS STRING
+COMMENT 'ABAC utility: Mask phone number showing last 4 digits'
+RETURN CASE 
+  WHEN phone IS NULL OR phone = '' THEN phone
+  WHEN LENGTH(REGEXP_REPLACE(phone, '[^0-9]', '')) < 4 THEN 'XXXX'
+  ELSE CONCAT('XXXX', RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 4))
+END;
+
+-- Example: '246-555-0101' → 'XXXX0101'
+```
+
+### Row Filter Functions
+
+#### 7. filter_business_hours
+```sql
+CREATE OR REPLACE FUNCTION filter_business_hours()
+RETURNS BOOLEAN
+COMMENT 'ABAC utility: Allow access only during business hours'
+RETURN HOUR(CURRENT_TIMESTAMP()) BETWEEN 14 AND 22; -- adjusted for UTC
+
+-- Use Case: Limit claim access to business hours only
+```
+
+#### 8. filter_high_value_claims
+```sql
+CREATE OR REPLACE FUNCTION filter_high_value_claims(amount DECIMAL(12,2))
+RETURNS BOOLEAN
+COMMENT 'ABAC utility: Filter out high-value claims'
+RETURN amount > 5000;
+
+-- Use Case: Managers see only high-value claims requiring approval
+```
+
+---
+
+## 🏷️ Tag Policies (Step 2)
+
+### pii_type_insurance
+```
+Tag Key: pii_type_insurance
+Description: PII field types for insurance industry
+Allowed Values:
+  - ssn
+  - email
+  - phone
+  - policy_number
+  - amount
+  - id
+```
+
+### data_classification_insurance
+```
+Tag Key: data_classification_insurance
+Description: Data classification level for insurance industry
+Allowed Values:
+  - Confidential
+  - Internal
+  - Public
+```
+
+---
+
+## 🔐 ABAC Policies (Step 3)
+
+### Column Mask Policies
+
+#### 1. ssn_mask
+```sql
+CREATE OR REPLACE POLICY ssn_mask ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4 
+TO `account users`
+FOR TABLES
+MATCH COLUMNS
+  hasTagValue('pii_type_insurance','ssn') AS ssn
+ON COLUMN ssn;
+```
+**Effect:** Any column tagged `pii_type_insurance = 'ssn'` shows `XXX-XX-XXXX`
+
+#### 2. policy_no_mask
+```sql
+CREATE OR REPLACE POLICY policy_no_mask ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_policy_number_last4 
+TO `account users`
+FOR TABLES
+MATCH COLUMNS
+  hasTagValue('pii_type_insurance','policy_number') AS policy
+ON COLUMN policy;
+```
+**Effect:** Any column tagged `pii_type_insurance = 'policy_number'` shows `****XXXX`
+
+#### 3. email_mask
+```sql
+CREATE OR REPLACE POLICY email_mask ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_email 
+TO `account users`
+FOR TABLES
+MATCH COLUMNS
+  hasTagValue('pii_type_insurance','email') AS email
+ON COLUMN email;
+```
+**Effect:** Any column tagged `pii_type_insurance = 'email'` shows `****@domain.com`
+
+#### 4. phone_mask
+```sql
+CREATE OR REPLACE POLICY phone_mask ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone 
+TO `account users`
+FOR TABLES
+MATCH COLUMNS
+  hasTagValue('pii_type_insurance','phone') AS phone
+ON COLUMN phone;
+```
+**Effect:** Any column tagged `pii_type_insurance = 'phone'` shows `XXXXNNNN`
+
+#### 5. policyholder_mask
+```sql
+CREATE OR REPLACE POLICY policyholder_mask ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_policyholder_id_hash 
+TO `account users`
+FOR TABLES
+MATCH COLUMNS
+  hasTagValue('pii_type_insurance','id') AS policyholder_id
+ON COLUMN policyholder_id;
+```
+**Effect:** Any column tagged `pii_type_insurance = 'id'` shows `PH_XXXXXXXXXXXX` (hashed, deterministic)
+
+### Row Filter Policies
+
+#### 6. claims_filter
+```sql
+CREATE OR REPLACE POLICY claims_filter ON SCHEMA {CATALOG}.{SCHEMA}
+ROW FILTER {CATALOG}.{SCHEMA}.filter_high_value_claims 
+TO `account users`
+FOR TABLES
+MATCH COLUMNS
+  hasTagValue('pii_type_insurance','amount') AS amount
+USING COLUMNS (amount);
+```
+**Effect:** Only rows where `amount > 5000` are visible
+
+---
+
+## 📊 Test Tables (Step 4)
+
+### policyholders_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| policyholder_id | STRING | pii_type_insurance = 'id' |
+| first_name | STRING | - |
+| last_name | STRING | - |
+| ssn | STRING | pii_type_insurance = 'ssn', data_classification = 'Confidential' |
+| email | STRING | pii_type_insurance = 'email' |
+| phone | STRING | pii_type_insurance = 'phone' |
+
+### policies_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| policy_id | STRING | - |
+| policyholder_id | STRING | pii_type_insurance = 'id' |
+| policy_number | STRING | pii_type_insurance = 'policy_number', data_classification_insurance = 'Confidential' |
+| policy_type | STRING | - |
+| premium | DECIMAL | - |
+| coverage_amount | STRING | - |
+
+### claims_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| claim_id | STRING | - |
+| policy_id | STRING | - |
+| claim_amount | STRING | pii_type_insurance = 'amount' |
+| claim_date | DATE | - |
+| status | STRING | - |
+
+### premiums_test
+| Column | Type | Tags Applied |
+|--------|------|--------------|
+| payment_id | STRING | - |
+| policy_id | STRING | - |
+| amount | STRING | pii_type_insurance = 'amount' |
+| payment_date | DATE | - |
+
+---
+
+## ✅ Compliance Mapping (Insurance)
+
+| Regulation | How ABAC Helps |
+|------------|----------------|
+| **HIPAA** | PHI data in health insurance masked, SSN protected |
+| **GLBA** | Customer financial data protected, policy details masked |
+| **State Privacy Laws** | PII columns identified and masked per state requirements |
+| **NAIC Model Laws** | Insurance-specific data governance compliance |
 
 ---
 

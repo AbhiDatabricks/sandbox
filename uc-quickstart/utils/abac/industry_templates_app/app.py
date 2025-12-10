@@ -621,7 +621,7 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
 
                     industry_dropdown = gr.Dropdown(
                         choices=get_available_industries(),
-                        value="Finance",
+                        value="Default",
                         label="Industry",
                         info="Select industry template",
                         interactive=True
@@ -638,11 +638,12 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                 with gr.Column():
                     gr.Markdown("### Industry Templates Available:")
                     gr.Markdown("""
-                    **7 Industries:**
+                    **8 Industries:**
+                    - Default ⭐ (Selected by default)
                     - Finance ✅ Complete
-                    - Healthcare ✅ Complete
                     - Insurance ✅ Complete
-                    - Manufacturing ✅ Complete
+                    - Healthcare ⚙️ Partial
+                    - Manufacturing ⚙️ Partial
                     - Retail ⚙️ Partial
                     - Telco ⚙️ Partial
                     - Government ⚙️ Partial
