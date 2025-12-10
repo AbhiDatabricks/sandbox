@@ -21,7 +21,7 @@ print(f"Using WAREHOUSE_ID: {WAREHOUSE_ID}")
 
 def execute_sql(sql_query, description="SQL query", user_token=None):
     """Execute SQL using SQL warehouse
-    
+
     Args:
         sql_query: SQL statement to execute
         description: Description for error messages
@@ -49,7 +49,7 @@ def execute_sql(sql_query, description="SQL query", user_token=None):
             )
             response.raise_for_status()
             result = response.json()
-            
+
             if result.get("status", {}).get("state") == "SUCCEEDED":
                 data_array = result.get("result", {}).get("data_array", [])
                 return data_array
@@ -66,7 +66,7 @@ def execute_sql(sql_query, description="SQL query", user_token=None):
                 warehouse_id=WAREHOUSE_ID,
                 wait_timeout="50s"
             )
-            
+
             if result.status.state == StatementState.SUCCEEDED:
                 if result.result and result.result.data_array:
                     return result.result.data_array
@@ -91,7 +91,7 @@ def get_catalogs():
             return catalogs
     except Exception as e:
         print(f"SDK catalog list failed: {e}, trying SQL...")
-    
+
     # Fallback to SQL
     try:
         data = execute_sql("SHOW CATALOGS")
@@ -137,10 +137,10 @@ def create_tag_policy(tag_key, description, values, use_user_token=False, user_t
         "description": description,
         "values": [{"name": v} for v in values]
     }
-    
+
     try:
         workspace_url = w.config.host.rstrip('/')
-        
+
         # Build headers - use user token if provided, else use service principal
         if use_user_token and user_token:
             headers = {
@@ -162,18 +162,18 @@ def create_tag_policy(tag_key, description, values, use_user_token=False, user_t
                 if "ALREADY_EXISTS" in err_str or "already exists" in err_str.lower():
                     return True, f"ℹ️  Already exists: {tag_key}"
                 return False, f"❌ Failed: {tag_key} - {err_str[:100]}"
-        
+
         # Only use requests if we have a user token
         response = requests.post(
             f"{workspace_url}/api/2.1/tag-policies",
             headers=headers,
             json=payload
         )
-        
+
         # Handle empty responses
         if response.status_code == 200:
             return True, f"✅ Created: {tag_key}"
-        
+
         # Try to parse JSON response for errors
         try:
             result = response.json()
@@ -185,7 +185,7 @@ def create_tag_policy(tag_key, description, values, use_user_token=False, user_t
             if response.status_code == 409:
                 return True, f"ℹ️  Already exists: {tag_key}"
             return False, f"❌ Failed: {tag_key} - HTTP {response.status_code}: {response.text[:100]}"
-            
+
     except Exception as e:
         return False, f"❌ Error: {tag_key} - {str(e)}"
 
@@ -196,10 +196,10 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
         # Validate inputs
         if not catalog or not schema or not industry:
             return f"❌ **Error**: Missing required fields\n\n- Catalog: {'✅' if catalog else '❌ Not selected'}\n- Schema: {'✅' if schema else '❌ Not selected'}\n- Industry: {'✅' if industry else '❌ Not selected'}\n\nPlease fill in all fields and try again."
-        
+
         # Show what was selected for debugging
         progress(0.0, desc=f"Selected: {catalog}.{schema} ({industry})")
-        
+
         # Extract user token if using user authorization
         user_token = None
         auth_mode = "Service Principal"
@@ -209,14 +209,14 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        
+
         progress(0.05, desc=f"Auth: {auth_mode} | Checking catalog access...")
         try:
             # Verify catalog exists and we have access
             execute_sql(f"USE CATALOG {catalog}", "Use catalog", user_token)
         except Exception as e:
             return f"❌ **Error**: Cannot access catalog `{catalog}`\n\n{str(e)}\n\n**Solution:**\n```sql\nGRANT USE CATALOG ON CATALOG {catalog} TO `your_user_or_sp`;\n```"
-        
+
         progress(0.1, desc=f"Creating schema {catalog}.{schema}...")
         try:
             # Create schema using fully qualified name (works regardless of context)
@@ -225,27 +225,27 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
             execute_sql(f"DESCRIBE SCHEMA {catalog}.{schema}", "Verify schema", user_token)
         except Exception as e:
             return f"❌ **Error**: Could not create schema `{catalog}.{schema}`\n\n{str(e)}\n\n**Possible causes:**\n- Missing CREATE SCHEMA permission\n- Schema name contains invalid characters\n- Catalog doesn't exist\n\n**Solution:**\n```sql\nGRANT CREATE SCHEMA ON CATALOG {catalog} TO `your_user_or_sp`;\nGRANT USE SCHEMA ON SCHEMA {catalog}.{schema} TO `your_user_or_sp`;\n```"
-        
+
         progress(0.2, desc="Loading industry template...")
         try:
             template = load_industry_template(industry)
             sql_statements = template.FUNCTIONS_SQL
         except ValueError as e:
             return f"❌ Error: {str(e)}"
-        
+
         # Replace with fully qualified names
         sql_statements = sql_statements.replace("CREATE OR REPLACE FUNCTION ", f"CREATE OR REPLACE FUNCTION {catalog}.{schema}.")
-        
+
         # Split by semicolon and keep only parts that contain CREATE FUNCTION
-        statements = [s.strip() for s in sql_statements.split(';') 
+        statements = [s.strip() for s in sql_statements.split(';')
                      if s.strip() and ('CREATE' in s.upper() and 'FUNCTION' in s.upper())]
         total = len(statements)
-        
+
         progress(0.3, desc=f"Creating {total} functions...")
-        
+
         success_count = 0
         errors = []
-        
+
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
@@ -254,16 +254,16 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
                         parts = stmt.upper().split("FUNCTION")
                         if len(parts) > 1:
                             func_name = parts[1].split("(")[0].strip()
-                    
+
                     execute_sql(stmt, f"CREATE FUNCTION {func_name}", user_token)
                     success_count += 1
-                    progress((0.3 + (0.6 * (idx + 1) / total)), 
+                    progress((0.3 + (0.6 * (idx + 1) / total)),
                            desc=f"Created {idx + 1}/{total}")
             except Exception as e:
                 errors.append(f"Function {idx + 1} ({func_name}):\n{str(e)[:300]}")
-        
+
         progress(1.0, desc="Complete!")
-        
+
         if success_count == total:
             return f"✅ **Step 1 Complete!**\n\n📊 **Created {success_count} functions** in `{catalog}.{schema}`\n\n**Next:** Create tag policies (Step 2)"
         elif success_count > 0:
@@ -276,7 +276,7 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
             for err in errors[:3]:
                 result += f"\n{err}\n" + "-"*50 + "\n"
             return result
-            
+
     except Exception as e:
         return f"❌ **Deployment Failed**\n\n{str(e)}"
 
@@ -286,7 +286,7 @@ def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Re
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
-        
+
         # Extract user token if using user authorization
         user_token = None
         auth_mode = "Service Principal"
@@ -296,35 +296,35 @@ def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Re
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        
+
         progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
             return f"❌ Error: {str(e)}"
-        
+
         progress(0.2, desc="Creating tag policies...")
-        
+
         results = []
         success_count = 0
-        
+
         for idx, (tag_key, desc, values) in enumerate(template.TAG_DEFINITIONS):
             success, msg = create_tag_policy(tag_key, desc, values, use_user_auth, user_token)
             results.append(msg)
             if success:
                 success_count += 1
-            progress(0.2 + (0.7 * (idx + 1) / len(template.TAG_DEFINITIONS)), 
+            progress(0.2 + (0.7 * (idx + 1) / len(template.TAG_DEFINITIONS)),
                    desc=f"Created {idx + 1}/{len(template.TAG_DEFINITIONS)}")
-        
+
         progress(1.0, desc="Complete!")
-        
+
         output = f"✅ **Step 2 Complete!**\n\n📊 **Created {success_count}/{len(template.TAG_DEFINITIONS)} tag policies**\n\n"
         for r in results:
             output += f"{r}\n"
-        
+
         output += f"\n**Next:** Create ABAC policies (Step 3)"
         return output
-        
+
     except Exception as e:
         return f"❌ **Tag Policy Creation Failed**\n\n{str(e)}"
 
@@ -334,7 +334,7 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
-        
+
         # Extract user token if using user authorization
         user_token = None
         auth_mode = "Service Principal"
@@ -344,28 +344,28 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        
+
         progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
             return f"❌ Error: {str(e)}"
-        
+
         progress(0.1, desc="Reading ABAC policy definitions...")
-        
+
         # Replace placeholders
         policies_sql = template.ABAC_POLICIES_SQL.replace("{CATALOG}", catalog).replace("{SCHEMA}", schema)
-        
+
         # Split by semicolon and keep only parts that contain CREATE POLICY
-        statements = [s.strip() for s in policies_sql.split(';') 
+        statements = [s.strip() for s in policies_sql.split(';')
                      if s.strip() and ('CREATE' in s.upper() or 'DROP' in s.upper())]
         total = len(statements)
-        
+
         progress(0.2, desc=f"Creating {total} ABAC policies...")
-        
+
         success_count = 0
         errors = []
-        
+
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
@@ -374,9 +374,9 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
                     progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Created {idx + 1}/{total}")
             except Exception as e:
                 errors.append(f"Policy {idx + 1}: {str(e)[:200]}")
-        
+
         progress(1.0, desc="Complete!")
-        
+
         if success_count == total:
             return f"✅ **Step 3 Complete!**\n\n📊 **Created {success_count} ABAC policies** in `{catalog}.{schema}`\n\n**Optional:** Create test data to try it out (Step 4)"
         else:
@@ -384,7 +384,7 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
             for err in errors[:3]:
                 result += f"{err}\n"
             return result
-            
+
     except Exception as e:
         return f"❌ **ABAC Policy Creation Failed**\n\n{str(e)}"
 
@@ -394,7 +394,7 @@ def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Reque
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
-        
+
         # Extract user token if using user authorization
         user_token = None
         auth_mode = "Service Principal"
@@ -404,29 +404,29 @@ def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Reque
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        
+
         progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
             return f"❌ Error: {str(e)}"
-        
+
         progress(0.1, desc="Reading table definitions...")
-        
+
         # Replace with fully qualified names and add _test suffix
         tables_sql = template.TEST_TABLES_SQL.replace("CREATE TABLE IF NOT EXISTS ", f"CREATE TABLE IF NOT EXISTS {catalog}.{schema}.")
         tables_sql = tables_sql.replace("INSERT INTO ", f"INSERT INTO {catalog}.{schema}.")
-        
+
         # Split by semicolon and keep only parts that contain SQL commands
-        statements = [s.strip() for s in tables_sql.split(';') 
+        statements = [s.strip() for s in tables_sql.split(';')
                      if s.strip() and ('CREATE' in s.upper() or 'INSERT' in s.upper())]
         total = len(statements)
-        
+
         progress(0.2, desc=f"Creating test tables...")
-        
+
         success_count = 0
         errors = []
-        
+
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
@@ -435,9 +435,9 @@ def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Reque
                     progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Executed {idx + 1}/{total}")
             except Exception as e:
                 errors.append(f"Statement {idx + 1}: {str(e)[:200]}")
-        
+
         progress(1.0, desc="Complete!")
-        
+
         if success_count > 0:
             tables_list = "\n".join([f"- {t}" for t in template.TEST_TABLES])
             return f"✅ **Test Data Created!**\n\n📊 **Executed {success_count}/{total} statements**\n\nTables created:\n{tables_list}\n\n**Next:** Tag the test data (Step 5)"
@@ -446,7 +446,7 @@ def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Reque
             for err in errors[:3]:
                 result += f"{err}\n"
             return result
-            
+
     except Exception as e:
         return f"❌ **Test Data Creation Failed**\n\n{str(e)}"
 
@@ -456,7 +456,7 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
-        
+
         # Extract user token if using user authorization
         user_token = None
         auth_mode = "Service Principal"
@@ -466,35 +466,35 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        
+
         # Check if test tables exist
         exists, test_tables = check_test_tables_exist(catalog, schema)
         if not exists:
             return "⚠️ **No test tables found!**\n\nCreate test data first (Step 4)"
-        
+
         progress(0.05, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
             return f"❌ Error: {str(e)}"
-        
+
         progress(0.1, desc="Applying tags to test tables...")
-        
+
         # Replace placeholders with actual catalog and schema
         tagging_sql = template.TAG_APPLICATIONS_SQL
         tagging_sql = tagging_sql.replace("{CATALOG}", catalog)
         tagging_sql = tagging_sql.replace("{SCHEMA}", schema)
-        
+
         # Split by semicolon and keep only parts that contain ALTER
-        statements = [s.strip() for s in tagging_sql.split(';') 
+        statements = [s.strip() for s in tagging_sql.split(';')
                      if s.strip() and 'ALTER' in s.upper()]
         total = len(statements)
-        
+
         progress(0.2, desc=f"Tagging columns...")
-        
+
         success_count = 0
         errors = []
-        
+
         for idx, stmt in enumerate(statements):
             try:
                 if stmt.strip():
@@ -503,9 +503,9 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
                     progress(0.2 + (0.7 * (idx + 1) / total), desc=f"Tagged {idx + 1}/{total}")
             except Exception as e:
                 errors.append(f"Tag {idx + 1}: {str(e)[:150]}")
-        
+
         progress(1.0, desc="Complete!")
-        
+
         if success_count > 0:
             return f"✅ **Tags Applied!**\n\n🏷️ **Tagged {success_count} columns** across test tables\n\n**Next:** Test the policies (Step 6)"
         else:
@@ -513,7 +513,7 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
             for err in errors[:3]:
                 result += f"{err}\n"
             return result
-            
+
     except Exception as e:
         return f"❌ **Tagging Failed**\n\n{str(e)}"
 
@@ -523,7 +523,7 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
     try:
         if not catalog or not schema or not industry:
             return "❌ Error: Please select catalog, schema, and industry"
-        
+
         # Extract user token if using user authorization
         user_token = None
         auth_mode = "Service Principal"
@@ -533,29 +533,29 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
                 auth_mode = f"User ({request.headers.get('X-Forwarded-Email', 'Unknown')})"
             else:
                 return "❌ **Error**: User authorization selected but no access token found"
-        
+
         # Check if test tables exist
         exists, test_tables = check_test_tables_exist(catalog, schema)
         if not exists:
             return "⚠️ **No test tables found!**\n\nCreate test data first (Step 4)"
-        
+
         progress(0.1, desc=f"Auth: {auth_mode} | Loading template...")
         try:
             template = load_industry_template(industry)
         except ValueError as e:
             return f"❌ Error: {str(e)}"
-        
+
         progress(0.2, desc="Running test queries...")
-        
+
         # Simple test queries to show masking works
         test_queries = [
             f"SELECT customer_id, email, phone, ssn FROM {catalog}.{schema}.customers_test LIMIT 3",
             f"SELECT card_id, card_number FROM {catalog}.{schema}.credit_cards_test LIMIT 2",
             f"SELECT transaction_id, amount, ip_address FROM {catalog}.{schema}.transactions_test LIMIT 3"
         ]
-        
+
         results = []
-        
+
         for idx, query in enumerate(test_queries):
             try:
                 data = execute_sql(query, f"Test query {idx+1}", user_token)
@@ -564,29 +564,29 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
                 progress(0.2 + (0.7 * (idx + 1) / len(test_queries)), desc=f"Tested {idx + 1}/{len(test_queries)}")
             except Exception as e:
                 results.append(f"⚠️ Query {idx+1} failed: {str(e)[:100]}")
-        
+
         progress(1.0, desc="Complete!")
-        
+
         output = f"✅ **Testing Complete!**\n\n📊 **Test Results:**\n\n"
         for r in results:
             output += f"{r} "
-        
+
         output += f"\n\n**Note:** Check the actual data in Databricks to see masking in action!"
         output += f"\n\nQuery your test tables:\n"
         output += f"- `SELECT * FROM {catalog}.{schema}.customers_test`\n"
         output += f"- `SELECT * FROM {catalog}.{schema}.accounts_test`\n"
         output += f"- `SELECT * FROM {catalog}.{schema}.credit_cards_test`\n"
         output += f"- `SELECT * FROM {catalog}.{schema}.transactions_test`\n"
-        
+
         return output
-        
+
     except Exception as e:
         return f"❌ **Testing Failed**\n\n{str(e)}"
 
 # Gradio UI
 with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🏭 ABAC Industry Templates Deployer")
-    
+
     with gr.Tabs():
         with gr.Tab("🚀 Deployer"):
             gr.Markdown("""
@@ -603,7 +603,7 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
             5. **Tag Test Data** - Apply tags to test tables
             6. **Test Policies** - Run queries to verify masking works
             """)
-            
+
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("### Configuration")
@@ -614,14 +614,14 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                         info="Select target catalog",
                         interactive=True
                     )
-                    
+
                     schema_dropdown = gr.Dropdown(
                         label="Schema",
                         info="Select existing or type to create new schema",
                         interactive=True,
                         allow_custom_value=True
                     )
-                    
+
                     industry_dropdown = gr.Dropdown(
                         choices=get_available_industries(),
                         value="Finance",
@@ -629,21 +629,22 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                         info="Select industry template",
                         interactive=True
                     )
-                    
+
                     use_user_auth = gr.Checkbox(
                         label="Use User Authorization",
                         value=False,
                         info="Run as your user (checked) or Service Principal (unchecked)"
                     )
-                    
+
                     refresh_btn = gr.Button("🔄 Refresh", size="sm")
-                
+
                 with gr.Column():
                     gr.Markdown("### Industry Templates Available:")
                     gr.Markdown("""
-                    **6 Industries:**
+                    **7 Industries:**
                     - Finance ✅ Complete
                     - Healthcare ✅ Complete
+                    - Insurance ✅ Complete
                     - Manufacturing ✅ Complete
                     - Retail ⚙️ Partial
                     - Telco ⚙️ Partial
@@ -655,84 +656,84 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                     - ABAC policies (complete or placeholder)
                     - Test data templates
                     """)
-    
+
             gr.Markdown("---")
             gr.Markdown("## Required Steps")
-            
+
             with gr.Row():
                 deploy_functions_btn = gr.Button("1️⃣ Create Functions", variant="primary", size="lg")
                 deploy_tags_btn = gr.Button("2️⃣ Create Tag Policies", variant="primary", size="lg")
                 deploy_abac_btn = gr.Button("3️⃣ Create ABAC Policies", variant="primary", size="lg")
-            
+
             output_required = gr.Markdown(label="Status")
-            
+
             gr.Markdown("---")
             gr.Markdown("## Optional Testing Steps")
-            
+
             with gr.Row():
                 create_test_btn = gr.Button("4️⃣ Create Test Data", size="lg")
                 tag_test_btn = gr.Button("5️⃣ Tag Test Data", size="lg")
                 test_policies_btn = gr.Button("6️⃣ Test Policies", size="lg")
-    
+
             output_optional = gr.Markdown(label="Test Status")
-            
+
             # Event handlers
             def update_schemas(catalog):
                 schemas = get_schemas(catalog)
                 return gr.Dropdown(choices=schemas, value=None)
-            
+
             catalog_dropdown.change(
                 fn=update_schemas,
                 inputs=[catalog_dropdown],
                 outputs=[schema_dropdown]
             )
-            
+
             refresh_btn.click(
                 fn=lambda: gr.Dropdown(choices=get_catalogs(), value=None),
                 outputs=[catalog_dropdown]
             )
-            
+
             # Required steps
             deploy_functions_btn.click(
                 fn=deploy_functions,
                 inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
                 outputs=[output_required]
             )
-            
+
             deploy_tags_btn.click(
                 fn=deploy_tag_policies,
                 inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
                 outputs=[output_required]
             )
-            
+
             deploy_abac_btn.click(
                 fn=deploy_abac_policies,
                 inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
                 outputs=[output_required]
             )
-            
+
             # Optional testing steps
             create_test_btn.click(
                 fn=create_test_data,
                 inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
                 outputs=[output_optional]
             )
-            
+
             tag_test_btn.click(
                 fn=tag_test_data,
                 inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
                 outputs=[output_optional]
             )
-            
+
             test_policies_btn.click(
                 fn=test_policies,
                 inputs=[catalog_dropdown, schema_dropdown, industry_dropdown, use_user_auth],
                 outputs=[output_optional]
             )
-        
+
         with gr.Tab("📚 Documentation"):
             gr.Markdown(DOCUMENTATION_MD)
-    
+
     gr.Markdown("""
     ---
     ### 📚 Resources

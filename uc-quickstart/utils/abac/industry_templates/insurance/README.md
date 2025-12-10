@@ -66,6 +66,7 @@ finance/
 ├── 2_Create_Tables.ipynb                # Notebook: Create schema & tables
 ├── 3_Setup_Tagging.ipynb                # Notebook: Define governed tags
 ├── 4_Test_ABAC_Policies.ipynb           # Notebook: Test functions through ABAC policies
+├── 5_Cleanup.ipynb                      # Notebook: Cleanup test tables, tag policies, and ABAC policies
 ├── README.md                            # This file
 ```
 
