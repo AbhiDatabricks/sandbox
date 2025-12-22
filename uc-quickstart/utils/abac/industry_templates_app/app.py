@@ -548,11 +548,9 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
         progress(0.2, desc="Running test queries...")
 
         # Simple test queries to show masking works
-        test_queries = [
-            f"SELECT customer_id, email, phone, ssn FROM {catalog}.{schema}.customers_test LIMIT 3",
-            f"SELECT card_id, card_number FROM {catalog}.{schema}.credit_cards_test LIMIT 2",
-            f"SELECT transaction_id, amount, ip_address FROM {catalog}.{schema}.transactions_test LIMIT 3"
-        ]
+        test_queries = []
+        for table in test_tables:
+            test_queries.append(f"SELECT * FROM {catalog}.{schema}.{table} LIMIT 2;")
 
         results = []
 
@@ -569,14 +567,12 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
 
         output = f"✅ **Testing Complete!**\n\n📊 **Test Results:**\n\n"
         for r in results:
-            output += f"{r} "
+            output += f"- {r} \n"
 
         output += f"\n\n**Note:** Check the actual data in Databricks to see masking in action!"
-        output += f"\n\nQuery your test tables:\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.customers_test`\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.accounts_test`\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.credit_cards_test`\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.transactions_test`\n"
+        output += f"\n\nQuery your test tables:\n\n"
+        for q in test_queries:
+            output += f"- `{q}` \n"
 
         return output
 
@@ -645,7 +641,7 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                     - Finance ✅ Complete
                     - Healthcare ✅ Complete
                     - Insurance ✅ Complete
-                    - Manufacturing ✅ Complete
+                    - Manufacturing ⚙️ Partial
                     - Retail ⚙️ Partial
                     - Telco ⚙️ Partial
                     - Government ⚙️ Partial
