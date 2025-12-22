@@ -6,32 +6,7 @@ INDUSTRY_NAME = "Healthcare"
 INDUSTRY_DESCRIPTION = "Healthcare/medical data protection with HIPAA compliance"
 
 FUNCTIONS_SQL = """
--- =============================================
--- DATABRICKS UNITY CATALOG ABAC MASKING FUNCTIONS
--- Updated Version with Configurable Catalog
--- Purpose: Attribute-Based Access Control (ABAC) utility functions for healthcare data masking
--- Reference: https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/
--- Usage: Set CATALOG_NAME variable before execution
--- =============================================
 
--- CONFIGURATION: IMPORTANT - Replace <<your_catalog_name>> with your actual catalog name
--- Examples: 'apscat', 'main', 'your_catalog_name'
--- Note: Variable substitution (${VARIABLE}) doesn't work reliably in all SQL contexts
--- Therefore, you MUST replace <<your_catalog_name>> with your actual catalog name before execution
-
--- Set catalog and schema context
--- =============================================
--- MASKING FUNCTIONS (9 total)
--- These transform/hide data values while preserving table structure
--- =============================================
-
--- =============================================
--- 1. PARTIAL STRING MASKING FUNCTION
--- Purpose: Show only first and last characters with middle masked
--- Usage: Patient names, addresses for partial visibility
--- Input: String value
--- Output: Partially masked string (e.g., J***n for John)
--- =============================================
 CREATE OR REPLACE FUNCTION mask_string_partial(input STRING)
 RETURNS STRING
 COMMENT 'ABAC utility: Partial string masking showing first and last characters'
@@ -42,13 +17,14 @@ RETURN CASE
     ELSE CONCAT(LEFT(input, 1), REPEAT('*', LENGTH(input) - 2), RIGHT(input, 1))
 END;
 
--- =============================================
--- 2. EMAIL MASKING FUNCTION
--- Purpose: Mask email addresses while preserving domain structure
--- Usage: Patient and provider email addresses
--- Input: Email string (e.g., john.doe@hospital.com)
--- Output: Masked email (e.g., ****@hospital.com)
--- =============================================
+CREATE OR REPLACE FUNCTION mask_policy_number_last4(policy STRING) 
+RETURNS STRING
+COMMENT 'ABAC utility: Mask policy number showing last 4 digits'
+RETURN CASE 
+  WHEN policy IS NULL THEN policy 
+  ELSE CONCAT('****', RIGHT(policy, 4)) 
+END;
+
 CREATE OR REPLACE FUNCTION mask_email(email STRING)
 RETURNS STRING
 COMMENT 'ABAC utility: Mask email local part while preserving domain'
@@ -59,13 +35,6 @@ RETURN CASE
     ELSE '****'
 END;
 
--- =============================================
--- 3. PHONE NUMBER MASKING FUNCTION
--- Purpose: Mask phone numbers while preserving format
--- Usage: Patient and emergency contact phone numbers
--- Input: Phone string (e.g., 555-0123)
--- Output: Masked phone (e.g., XXXX0123)
--- =============================================
 CREATE OR REPLACE FUNCTION mask_phone(phone STRING)
 RETURNS STRING
 COMMENT 'ABAC utility: Mask phone numbers while preserving format structure'
@@ -76,25 +45,11 @@ RETURN CASE
     ELSE REPEAT('X', LENGTH(phone))
 END;
 
--- =============================================
--- 4. ONE-WAY STRING MASKING FUNCTION
--- Purpose: Hash string values using SHA-256 for irreversible masking
--- Usage: Patient names, addresses, email domains for anonymization
--- Input: String value to be hashed
--- Output: SHA-256 hash string (64 characters)
--- =============================================
 CREATE OR REPLACE FUNCTION mask_string_hash(input STRING)
 RETURNS STRING
 COMMENT 'ABAC utility: One-way hash masking using SHA-256 for complete anonymization'
 RETURN sha2(input, 256);
 
--- =============================================
--- 5. DATE MASKING FUNCTION (YEAR ONLY)
--- Purpose: Mask date to show only year for age calculation
--- Usage: Date of birth masking while preserving year for demographics
--- Input: DATE value
--- Output: Date with January 1st of same year
--- =============================================
 CREATE OR REPLACE FUNCTION mask_date_year_only(input_date DATE)
 RETURNS DATE
 COMMENT 'ABAC utility: Mask date to show only year (January 1st of same year)'
@@ -103,13 +58,6 @@ RETURN CASE
     ELSE DATE(CONCAT(YEAR(input_date), '-01-01'))
 END;
 
--- =============================================
--- 6. ADDRESS MASKING FUNCTION
--- Purpose: Mask street address while preserving city/state
--- Usage: Patient addresses for geographic analysis without full PII
--- Input: Full address string
--- Output: City and state only
--- =============================================
 CREATE OR REPLACE FUNCTION mask_address_city_state(address STRING, city STRING, state STRING)
 RETURNS STRING
 COMMENT 'ABAC utility: Mask street address, show only city and state'
@@ -120,275 +68,31 @@ RETURN CASE
     ELSE CONCAT(city, ', ', state)
 END;
 
--- =============================================
--- 7. COMPLETE MASKING FUNCTION
--- Purpose: Completely mask any sensitive numeric column by returning NULL
--- Usage: PatientID, VisitID, or any numeric identifier that should be hidden
--- Input: Any DECIMAL value
--- Output: NULL (complete masking)
--- =============================================
 CREATE OR REPLACE FUNCTION mask_for_all_roles(id DECIMAL)
 RETURNS DECIMAL
 COMMENT 'ABAC utility: Completely mask numeric values by returning NULL'
 RETURN NULL;
 
--- =============================================
--- 8. DETERMINISTIC NUMERIC MASKING WITH REFERENTIAL INTEGRITY
--- Purpose: Mask numeric values while preserving referential relationships
--- Usage: Transform PatientID, ProviderID while maintaining join relationships
--- Input: DECIMAL value to be masked
--- Output: Deterministically transformed DECIMAL value
--- =============================================
-CREATE OR REPLACE FUNCTION mask_decimal_referential(id DECIMAL)
-RETURNS DECIMAL
-COMMENT 'ABAC utility: Mask numeric values while preserving referential integrity'
-RETURN id * fast_deterministic_multiplier(id);
-
--- =============================================
--- 9. FAST DETERMINISTIC MULTIPLIER HELPER FUNCTION
--- Purpose: Generate consistent multiplier for referential masking
--- Usage: Helper function for mask_decimal_referential
--- Input: DECIMAL value
--- Output: Consistent multiplier between 1.001 and 2.000
--- =============================================
-CREATE OR REPLACE FUNCTION fast_deterministic_multiplier(id DECIMAL)
-RETURNS DECIMAL
-COMMENT 'ABAC utility: Generate deterministic multiplier for consistent masking'
-RETURN 1 + MOD(CRC32(CAST(CAST(id AS STRING) AS BINARY)), 1000) * 0.001;
-
--- =============================================
--- ROW FILTER FUNCTIONS (7 total)
--- These return TRUE/FALSE to show/hide entire rows
--- Updated to work with ABAC policies (no is_account_group_member calls)
--- =============================================
-
--- =============================================
--- 10. TIME-BASED FILTER: BUSINESS HOURS
--- Purpose: Allow data access only during business hours (9 AM - 6 PM Melbourne time)
--- Usage: Time-based access control for sensitive healthcare operations
--- Output: TRUE during business hours, FALSE otherwise
--- =============================================
 CREATE OR REPLACE FUNCTION business_hours_filter()
 RETURNS BOOLEAN
 COMMENT 'ABAC utility: Allow access only during business hours (9 AM - 6 PM Melbourne time)'
 RETURN hour(from_utc_timestamp(current_timestamp(), 'Australia/Melbourne')) BETWEEN 9 AND 18;
 
--- =============================================
--- 11. EMERGENCY ACCESS FILTER
--- Purpose: Allow 24/7 access for emergency healthcare operations
--- Usage: Emergency access during off-hours, audit trail requirements
--- Output: TRUE (always allows access)
--- =============================================
-CREATE OR REPLACE FUNCTION emergency_hours_access()
-RETURNS BOOLEAN
-COMMENT 'ABAC utility: Allow 24/7 access for emergency healthcare operations'
-RETURN TRUE; -- Healthcare operates 24/7, but can be modified for specific use cases
-
--- =============================================
--- 12. NO ROWS FILTER
--- Purpose: Returns FALSE to filter out all rows (complete data hiding)
--- Usage: Row-level security to hide all data from unauthorized users
--- Output: FALSE (always hides all data)
--- =============================================
 CREATE OR REPLACE FUNCTION no_rows()
 RETURNS BOOLEAN
 COMMENT 'ABAC utility: Returns FALSE to filter out all rows for complete data hiding'
 RETURN FALSE;
 
--- =============================================
--- 13. HEALTHCARE ROLE FILTER (UPDATED FOR ABAC)
--- Purpose: Filter access based on healthcare roles and departments
--- Usage: Row-level security based on user roles and data sensitivity
--- Input: Data classification level
--- Output: Boolean for access permission (group membership handled by ABAC policy)
--- =============================================
-CREATE OR REPLACE FUNCTION healthcare_role_filter(data_classification STRING)
+CREATE OR REPLACE FUNCTION filter_by_region(region STRING)
 RETURNS BOOLEAN
-COMMENT 'ABAC utility: Healthcare role-based access control filter - group membership handled by ABAC policy'
-RETURN CASE
-    WHEN data_classification = 'PUBLIC' THEN TRUE
-    WHEN data_classification = 'INTERNAL' THEN TRUE  -- ABAC policy will filter based on Healthcare_Staff group
-    WHEN data_classification = 'CONFIDENTIAL' THEN TRUE  -- ABAC policy will filter based on Healthcare_Providers group
-    WHEN data_classification = 'RESTRICTED' THEN TRUE  -- ABAC policy will filter based on Healthcare_Admins group
-    ELSE FALSE
-END;
+COMMENT 'ABAC utility: Filter data by user region'
+RETURN region = 'North';
 
--- =============================================
--- 14. HIPAA COMPLIANCE FILTER (UPDATED FOR ABAC)
--- Purpose: Apply HIPAA-compliant masking based on user clearance
--- Usage: Ensure HIPAA compliance for healthcare data access
--- Input: User clearance level
--- Output: Boolean for HIPAA-compliant access (group membership handled by ABAC policy)
--- =============================================
-CREATE OR REPLACE FUNCTION hipaa_compliant_access(clearance_required STRING)
-RETURNS BOOLEAN
-COMMENT 'ABAC utility: HIPAA-compliant access control - group membership handled by ABAC policy'
-RETURN CASE
-    WHEN clearance_required = 'BASIC' THEN TRUE  -- ABAC policy will check Healthcare_Basic group
-    WHEN clearance_required = 'ELEVATED' THEN TRUE  -- ABAC policy will check Healthcare_Elevated group
-    WHEN clearance_required = 'ADMIN' THEN TRUE  -- ABAC policy will check Healthcare_Admin group
-    ELSE FALSE
-END;
-
--- =============================================
--- 15. SIMPLE ROW FILTER
--- Purpose: General purpose filter for basic row-level security
--- Usage: Simple row filtering where group-based filtering handled by ABAC policy
--- Output: TRUE (access control handled by ABAC policy)
--- =============================================
-CREATE OR REPLACE FUNCTION simple_row_filter()
-RETURNS BOOLEAN
-COMMENT 'ABAC utility: Simple row filter - returns TRUE, group-based filtering handled by ABAC policy'
-RETURN TRUE;
-
--- =============================================
--- 16. SENSITIVE DATA FILTER
--- Purpose: Filter for highly sensitive healthcare data
--- Usage: For patient records, lab results, prescriptions requiring special access
--- Output: TRUE (access control handled by ABAC policy)
--- =============================================
-CREATE OR REPLACE FUNCTION sensitive_data_filter()
-RETURNS BOOLEAN
-COMMENT 'ABAC utility: Sensitive data filter - returns TRUE, access control handled by ABAC policy'
-RETURN TRUE;
-
--- =============================================
--- FUNCTION TESTING AND VERIFICATION
--- =============================================
-
--- Test masking functions
-SELECT 
-    'mask_string_partial' as function_name,
-    mask_string_partial('John Smith') as result
-UNION ALL
-SELECT 
-    'mask_email',
-    mask_email('john.smith@hospital.com')
-UNION ALL
-SELECT 
-    'mask_phone',
-    mask_phone('555-0123')
-UNION ALL
-SELECT 
-    'mask_date_year_only',
-    CAST(mask_date_year_only('1975-03-15') AS STRING)
-UNION ALL
-SELECT 
-    'mask_address_city_state',
-    mask_address_city_state('123 Main St', 'Seattle', 'WA')
-UNION ALL
-SELECT 
-    'mask_for_all_roles',
-    CAST(mask_for_all_roles(12345) AS STRING)
-UNION ALL
-SELECT 
-    'mask_decimal_referential',
-    CAST(mask_decimal_referential(12345) AS STRING)
-UNION ALL
-SELECT 
-    'fast_deterministic_multiplier',
-    CAST(fast_deterministic_multiplier(12345) AS STRING);
-
--- Test row filter functions
-SELECT 
-    'business_hours_filter' as function_name,
-    CAST(business_hours_filter() AS STRING) as result
-UNION ALL
-SELECT 
-    'emergency_hours_access',
-    CAST(emergency_hours_access() AS STRING)
-UNION ALL
-SELECT 
-    'no_rows',
-    CAST(no_rows() AS STRING)
-UNION ALL
-SELECT 
-    'simple_row_filter',
-    CAST(simple_row_filter() AS STRING)
-UNION ALL
-SELECT 
-    'sensitive_data_filter',
-    CAST(sensitive_data_filter() AS STRING)
-UNION ALL
-SELECT 
-    'healthcare_role_filter',
-    CAST(healthcare_role_filter('CONFIDENTIAL') AS STRING)
-UNION ALL
-SELECT 
-    'hipaa_compliant_access',
-    CAST(hipaa_compliant_access('ELEVATED') AS STRING);
-
--- =============================================
--- EXAMPLE ABAC POLICY APPLICATIONS
--- =============================================
-
--- Example 1: Apply column masking to Patient names
--- ALTER TABLE Patients 
--- ALTER COLUMN FirstName 
--- SET MASK mask_string_partial(FirstName) 
--- USING ('Healthcare_Providers');
-
--- Example 2: Apply row filter for sensitive patient data
--- ALTER TABLE Patients 
--- SET ROW FILTER simple_row_filter() 
--- USING ('Healthcare_Staff');
-
--- Example 3: Time-based access for lab results
--- ALTER TABLE LabResults 
--- SET ROW FILTER business_hours_filter() 
--- USING ('Healthcare_Contractors');
-
--- Example 4: Email masking for patient privacy
--- ALTER TABLE Patients 
--- ALTER COLUMN Email 
--- SET MASK mask_email(Email) 
--- USING ('Healthcare_Basic');
-
--- Example 5: Phone number masking
--- ALTER TABLE Patients 
--- ALTER COLUMN PhoneNumber 
--- SET MASK mask_phone(PhoneNumber) 
--- USING ('Healthcare_Basic');
-
--- =============================================
--- FUNCTION INVENTORY SUMMARY
--- =============================================
-
--- Show all functions created in this schema
-SHOW USER FUNCTIONS;
-
--- =============================================
--- DEPLOYMENT SUMMARY
--- =============================================
--- Successfully created 16 ABAC utility functions:
--- 
--- MASKING FUNCTIONS (9):
--- 1. mask_string_partial() - Partial name masking
--- 2. mask_email() - Email masking preserving domain
--- 3. mask_phone() - Phone number masking
--- 4. mask_string_hash() - SHA-256 hash masking
--- 5. mask_date_year_only() - Date masking to year only
--- 6. mask_address_city_state() - Address masking
--- 7. mask_for_all_roles() - Complete numeric masking
--- 8. mask_decimal_referential() - Referential integrity masking
--- 9. fast_deterministic_multiplier() - Helper for consistent transforms
---
--- ROW FILTER FUNCTIONS (7):
--- 10. business_hours_filter() - Time-based access control
--- 11. emergency_hours_access() - 24/7 healthcare access
--- 12. no_rows() - Complete data hiding
--- 13. healthcare_role_filter() - Role-based filtering
--- 14. hipaa_compliant_access() - HIPAA compliance filtering
--- 15. simple_row_filter() - General purpose filter
--- 16. sensitive_data_filter() - Sensitive data access control
---
--- All functions are catalog-agnostic and ready for ABAC policy deployment!
--- =============================================
 """
 
 TAG_DEFINITIONS = [
     ("pii_type_healthcare", "Healthcare PII data types", [
-        "patient_name", "patient_id", "ssn", "dob", "email", "phone", 
+        "patient_name", "patient_id", "ssn", "dob", "email", "phone",
         "address", "medical_record_number", "diagnosis", "treatment"
     ]),
     ("phi_level_healthcare", "Protected Health Information level", [
@@ -400,156 +104,85 @@ TAG_DEFINITIONS = [
     ("data_sensitivity_healthcare", "Data sensitivity classification", [
         "Highly_Sensitive", "Sensitive", "Internal", "Public"
     ]),
+    ("shift_hours_healthcare", "Time-based access control (Standard_Business=8AM-6PM)", [
+        "Standard_Business", "Extended_Hours", "Night_Shift", "Emergency_24x7"
+    ])
 ]
 
 ABAC_POLICIES_SQL = """
--- =============================================
--- HEALTHCARE ABAC POLICIES - Using Built-in Groups
--- =============================================
--- This version uses workspace built-in groups (users, admins) instead of custom groups
---
--- Group Mapping:
--- - `users` group = Regular healthcare staff (analysts, technicians, clerks)
--- - `admins` group = Senior staff, managers (full data access)
-
--- Verify functions exist
-SHOW FUNCTIONS IN apscat.healthcare LIKE 'mask*';
-SHOW FUNCTIONS IN apscat.healthcare LIKE 'filter*';
-
-SELECT "Ready to create healthcare ABAC policies with built-in groups" AS status;
-
--- =============================================
 -- POLICY 1: Patient ID Masking for Cross-Table Analytics
--- =============================================
 CREATE OR REPLACE POLICY healthcare_patient_id_masking
-ON SCHEMA apscat.healthcare
-COMMENT 'Deterministic masking of PatientID for analytics while preserving join capability'
-COLUMN MASK apscat.healthcare.mask_referential
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_string_hash
+TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('job_role', 'Healthcare_Analyst') AND hasTagValue('data_purpose', 'Population_Analytics') AS patient_id_cols
+MATCH COLUMNS 
+    hasTagValue('pii_type_healthcare', 'patient_id') AND hasTagValue('phi_level_healthcare', 'High') AS patient_id_cols
 ON COLUMN patient_id_cols;
 
--- =============================================
 -- POLICY 2: Business Hours Access for Lab Data
--- =============================================
 CREATE OR REPLACE POLICY healthcare_business_hours_filter
-ON SCHEMA apscat.healthcare
-COMMENT 'Time-based access restriction for lab results outside business hours'
-ROW FILTER apscat.healthcare.filter_business_hours
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+ROW FILTER {CATALOG}.{SCHEMA}.business_hours_filter
+TO `account users`
 FOR TABLES
-WHEN hasTagValue('shift_hours', 'Standard_Business');
+WHEN hasTagValue('shift_hours_healthcare', 'Standard_Business');
 
--- =============================================
 -- POLICY 3: Partial Name Masking for Privacy
--- =============================================
 CREATE OR REPLACE POLICY healthcare_name_masking
-ON SCHEMA apscat.healthcare
-COMMENT 'Partial name masking for regular staff to protect patient privacy'
-COLUMN MASK apscat.healthcare.mask_name_partial
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_string_partial
+TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('phi_level', 'Full_PHI') AS name_cols
+MATCH COLUMNS 
+    hasTagValue('pii_type_healthcare', 'patient_name') AS name_cols
 ON COLUMN name_cols;
 
--- =============================================
 -- POLICY 4: Email Masking
--- =============================================
 CREATE OR REPLACE POLICY healthcare_email_masking
-ON SCHEMA apscat.healthcare
-COMMENT 'Mask email addresses for regular users'
-COLUMN MASK apscat.healthcare.mask_email
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_email
+TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('phi_level', 'Full_PHI') AS email_cols
+MATCH COLUMNS 
+    hasTagValue('data_sensitivity_healthcare', 'Internal') AND hasTagValue('pii_type_healthcare', 'email') AS email_cols
 ON COLUMN email_cols;
 
--- =============================================
 -- POLICY 5: Phone Number Masking
--- =============================================
 CREATE OR REPLACE POLICY healthcare_phone_masking
-ON SCHEMA apscat.healthcare
-COMMENT 'Mask phone numbers for regular users'
-COLUMN MASK apscat.healthcare.mask_phone
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone
+TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('phi_level', 'Full_PHI') AS phone_cols
+MATCH COLUMNS 
+    hasTagValue('data_sensitivity_healthcare', 'Sensitive') AND hasTagValue('pii_type_healthcare', 'phone') AS phone_cols
 ON COLUMN phone_cols;
 
--- =============================================
--- POLICY 6: Insurance Number Masking (Last 4)
--- =============================================
+-- POLICY 6: Insurance Number Masking
 CREATE OR REPLACE POLICY healthcare_insurance_masking
-ON SCHEMA apscat.healthcare
-COMMENT 'Show only last 4 digits of insurance numbers for basic verification'
-COLUMN MASK apscat.healthcare.mask_insurance_last4
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_policy_number_last4
+TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('verification_level', 'Basic') OR hasTagValue('verification_level', 'Standard') AS insurance_cols
+MATCH COLUMNS 
+    hasTagValue('data_sensitivity_healthcare', 'Sensitive') AND hasTagValue('phi_level_healthcare', 'Medium') AS insurance_cols
 ON COLUMN insurance_cols;
 
--- =============================================
 -- POLICY 7: Age Group Masking for Research
--- =============================================
 CREATE OR REPLACE POLICY healthcare_age_group_masking
-ON SCHEMA apscat.healthcare
-COMMENT 'Convert date of birth to age groups for HIPAA-compliant research'
-COLUMN MASK apscat.healthcare.mask_dob_age_group
-TO `users`
+ON SCHEMA {CATALOG}.{SCHEMA}
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_date_year_only
+TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('research_approval', 'Demographics_Study') AS dob_cols
+MATCH COLUMNS 
+    hasTagValue('pii_type_healthcare', 'dob') AND hasTagValue('phi_level_healthcare', 'High') AS dob_cols
 ON COLUMN dob_cols;
 
--- Verify policies created
-SHOW POLICIES ON SCHEMA apscat.healthcare;
-
-SELECT "✅ Healthcare ABAC policies created successfully with built-in groups!" AS status;
-
--- =============================================
--- POLICY SUMMARY
--- =============================================
--- Column Masking Policies (6):
--- 1. Patient ID - Deterministic masking for joins
--- 2. Names - Partial masking (J*** S***)
--- 3. Emails - Local part masked (****@domain.com)
--- 4. Phones - Partial masking (XXX-XXX-1234)
--- 5. Insurance - Last 4 digits only
--- 6. DOB - Age groups (18-25, 26-35, etc.)
---
--- Row Filter Policies (1):
--- 7. Business hours - Time-based access control
---
--- Access Model:
--- - `users` group: See masked/filtered data
--- - `admins` group: See full unmasked data
---
--- This demonstrates role-based ABAC without requiring custom group creation!
 """
 
 TEST_TABLES_SQL = """
--- =============================================
--- HEALTHCARE DATABASE SCHEMA FOR DATABRICKS
--- Updated Version with Configurable Catalog
--- Purpose: Testing and demonstration with synthetic data
--- Usage: Set CATALOG_NAME variable before execution
--- =============================================
 
--- CONFIGURATION: IMPORTANT - Replace ${CATALOG_NAME} with your actual catalog name
--- Examples: 'apscat', 'main', 'your_catalog_name'
--- Note: Variable substitution (${VARIABLE}) doesn't work reliably in all SQL contexts
--- Therefore, you MUST replace ${CATALOG_NAME} with your actual catalog name before execution
-
--- Create and use the target catalog and schema
-CREATE SCHEMA IF NOT EXISTS healthcare
-COMMENT 'Healthcare data schema for ABAC demonstration and testing';
--- =============================================
--- TABLE 1: PATIENTS
--- Primary table containing patient demographics
--- =============================================
-DROP TABLE IF EXISTS Patients;
-
-CREATE TABLE Patients (
+CREATE TABLE IF NOT EXISTS patients_test (
     PatientID STRING NOT NULL,
     FirstName STRING NOT NULL,
     LastName STRING NOT NULL,
@@ -569,37 +202,29 @@ CREATE TABLE Patients (
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Patient demographics and contact information for healthcare system';
+INSERT INTO patients_test VALUES
+('PAT001', 'John', 'Smith', '1975-03-15', 'Male', '122-555-0101', 'john.smith@email.com', '123 Main St', 'Seattle', 'WA', '98101', 'Jane Smith', '121-555-0102', 'O+', '2024-01-01 10:00:00'),
+('PAT002', 'Sarah', 'Johnson', '1982-07-22', 'Female', '220-555-0201', 'sarah.j@email.com', '456 Oak Ave', 'Portland', 'OR', '97201', 'Mike Johnson', '599-555-0202', 'A+', '2024-01-02 11:00:00'),
+('PAT003', 'Michael', 'Brown', '1990-11-08', 'Male', '508-555-0301', 'mbrown@email.com', '789 Pine St', 'San Francisco', 'CA', '94101', 'Lisa Brown', '392-555-0302', 'B+', '2024-01-03 12:00:00'),
+('PAT004', 'Emily', 'Davis', '1988-05-12', 'Female', '502-555-0401', 'emily.davis@email.com', '321 Elm St', 'Los Angeles', 'CA', '90210', 'Tom Davis', '445-555-0402', 'AB+', '2024-01-04 13:00:00'),
+('PAT005', 'David', 'Wilson', '1965-09-30', 'Male', '140-555-0501', 'dwilson@email.com', '654 Maple Dr', 'Phoenix', 'AZ', '85001', 'Carol Wilson', '808-555-0502', 'O-', '2024-01-05 14:00:00'),
+('PAT006', 'Jennifer', 'Martinez', '1993-12-18', 'Female', '252-555-0601', 'jmartinez@email.com', '987 Cedar Ln', 'Denver', 'CO', '80201', 'Carlos Martinez', '439-555-0602', 'A-', '2024-01-06 15:00:00'),
+('PAT007', 'Robert', 'Anderson', '1978-04-25', 'Male', '999-555-0701', 'randerson@email.com', '147 Birch Ave', 'Austin', 'TX', '73301', 'Mary Anderson', '472-555-0702', 'B-', '2024-01-07 16:00:00'),
+('PAT008', 'Lisa', 'Taylor', '1985-08-14', 'Female', '484-555-0801', 'ltaylor@email.com', '258 Spruce St', 'Miami', 'FL', '33101', 'John Taylor', '765-555-0802', 'AB-', '2024-01-08 17:00:00'),
+('PAT009', 'Christopher', 'Thomas', '1972-01-07', 'Male', '743-555-0901', 'cthomas@email.com', '369 Willow Rd', 'Chicago', 'IL', '60601', 'Susan Thomas', '292-555-0902', 'O+', '2024-01-09 18:00:00'),
+('PAT010', 'Amanda', 'Jackson', '1991-06-03', 'Female', '985-555-1001', 'ajackson@email.com', '741 Aspen Ct', 'Boston', 'MA', '02101', 'James Jackson', '733-555-1002', 'A+', '2024-01-10 19:00:00'),
+('PAT011', 'Kevin', 'White', '1987-10-16', 'Male', '492-555-1101', 'kwhite@email.com', '852 Poplar St', 'Atlanta', 'GA', '30301', 'Linda White', '555-1102', 'B+', '2024-01-11 20:00:00'),
+('PAT012', 'Michelle', 'Harris', '1979-02-28', 'Female', '111-555-1201', 'mharris@email.com', '963 Hickory Ave', 'Dallas', 'TX', '75201', 'Paul Harris', '717-555-1202', 'AB+', '2024-01-12 21:00:00'),
+('PAT013', 'Daniel', 'Martin', '1983-12-11', 'Male', '482-555-1301', 'dmartin@email.com', '159 Walnut Dr', 'Nashville', 'TN', '37201', 'Nancy Martin', '249-555-1302', 'O-', '2024-01-13 22:00:00'),
+('PAT014', 'Rachel', 'Thompson', '1995-05-29', 'Female', '188-555-1401', 'rthompson@email.com', '357 Cherry Ln', 'Las Vegas', 'NV', '89101', 'Steve Thompson', '550-555-1402', 'A-', '2024-01-14 23:00:00'),
+('PAT015', 'Matthew', 'Garcia', '1974-09-02', 'Male', '363-555-1501', 'mgarcia@email.com', '486 Dogwood Ct', 'San Diego', 'CA', '92101', 'Maria Garcia', '332-555-1502', 'B-', '2024-01-15 08:00:00'),
+('PAT016', 'Jessica', 'Rodriguez', '1989-07-19', 'Female', '592-555-1601', 'jrodriguez@email.com', '729 Magnolia St', 'Tampa', 'FL', '33601', 'Luis Rodriguez', '915-555-1602', 'AB-', '2024-01-16 09:00:00'),
+('PAT017', 'Andrew', 'Lewis', '1976-03-06', 'Male', '202-555-1701', 'alewis@email.com', '618 Sycamore Ave', 'Minneapolis', 'MN', '55401', 'Beth Lewis', '310-555-1702', 'O+', '2024-01-17 10:00:00'),
+('PAT018', 'Nicole', 'Lee', '1992-11-23', 'Female', '918-555-1801', 'nlee@email.com', '507 Redwood Dr', 'Portland', 'OR', '97202', 'Kevin Lee', '215-555-1802', 'A+', '2024-01-18 11:00:00'),
+('PAT019', 'Joshua', 'Walker', '1981-08-08', 'Male', '301-555-1901', 'jwalker@email.com', '394 Fir St', 'Salt Lake City', 'UT', '84101', 'Amy Walker', '730-555-1902', 'B+', '2024-01-19 12:00:00'),
+('PAT020', 'Stephanie', 'Hall', '1986-04-17', 'Female', '395-555-2001', 'shall@email.com', '283 Palm Ave', 'Sacramento', 'CA', '95814', 'Greg Hall', '645-555-2002', 'AB+', '2024-01-20 13:00:00');
 
--- Insert synthetic patient data
-INSERT INTO Patients VALUES
-('PAT001', 'John', 'Smith', '1975-03-15', 'Male', '555-0101', 'john.smith@email.com', '123 Main St', 'Seattle', 'WA', '98101', 'Jane Smith', '555-0102', 'O+', '2024-01-01 10:00:00'),
-('PAT002', 'Sarah', 'Johnson', '1982-07-22', 'Female', '555-0201', 'sarah.j@email.com', '456 Oak Ave', 'Portland', 'OR', '97201', 'Mike Johnson', '555-0202', 'A+', '2024-01-02 11:00:00'),
-('PAT003', 'Michael', 'Brown', '1990-11-08', 'Male', '555-0301', 'mbrown@email.com', '789 Pine St', 'San Francisco', 'CA', '94101', 'Lisa Brown', '555-0302', 'B+', '2024-01-03 12:00:00'),
-('PAT004', 'Emily', 'Davis', '1988-05-12', 'Female', '555-0401', 'emily.davis@email.com', '321 Elm St', 'Los Angeles', 'CA', '90210', 'Tom Davis', '555-0402', 'AB+', '2024-01-04 13:00:00'),
-('PAT005', 'David', 'Wilson', '1965-09-30', 'Male', '555-0501', 'dwilson@email.com', '654 Maple Dr', 'Phoenix', 'AZ', '85001', 'Carol Wilson', '555-0502', 'O-', '2024-01-05 14:00:00'),
-('PAT006', 'Jennifer', 'Martinez', '1993-12-18', 'Female', '555-0601', 'jmartinez@email.com', '987 Cedar Ln', 'Denver', 'CO', '80201', 'Carlos Martinez', '555-0602', 'A-', '2024-01-06 15:00:00'),
-('PAT007', 'Robert', 'Anderson', '1978-04-25', 'Male', '555-0701', 'randerson@email.com', '147 Birch Ave', 'Austin', 'TX', '73301', 'Mary Anderson', '555-0702', 'B-', '2024-01-07 16:00:00'),
-('PAT008', 'Lisa', 'Taylor', '1985-08-14', 'Female', '555-0801', 'ltaylor@email.com', '258 Spruce St', 'Miami', 'FL', '33101', 'John Taylor', '555-0802', 'AB-', '2024-01-08 17:00:00'),
-('PAT009', 'Christopher', 'Thomas', '1972-01-07', 'Male', '555-0901', 'cthomas@email.com', '369 Willow Rd', 'Chicago', 'IL', '60601', 'Susan Thomas', '555-0902', 'O+', '2024-01-09 18:00:00'),
-('PAT010', 'Amanda', 'Jackson', '1991-06-03', 'Female', '555-1001', 'ajackson@email.com', '741 Aspen Ct', 'Boston', 'MA', '02101', 'James Jackson', '555-1002', 'A+', '2024-01-10 19:00:00'),
-('PAT011', 'Kevin', 'White', '1987-10-16', 'Male', '555-1101', 'kwhite@email.com', '852 Poplar St', 'Atlanta', 'GA', '30301', 'Linda White', '555-1102', 'B+', '2024-01-11 20:00:00'),
-('PAT012', 'Michelle', 'Harris', '1979-02-28', 'Female', '555-1201', 'mharris@email.com', '963 Hickory Ave', 'Dallas', 'TX', '75201', 'Paul Harris', '555-1202', 'AB+', '2024-01-12 21:00:00'),
-('PAT013', 'Daniel', 'Martin', '1983-12-11', 'Male', '555-1301', 'dmartin@email.com', '159 Walnut Dr', 'Nashville', 'TN', '37201', 'Nancy Martin', '555-1302', 'O-', '2024-01-13 22:00:00'),
-('PAT014', 'Rachel', 'Thompson', '1995-05-29', 'Female', '555-1401', 'rthompson@email.com', '357 Cherry Ln', 'Las Vegas', 'NV', '89101', 'Steve Thompson', '555-1402', 'A-', '2024-01-14 23:00:00'),
-('PAT015', 'Matthew', 'Garcia', '1974-09-02', 'Male', '555-1501', 'mgarcia@email.com', '486 Dogwood Ct', 'San Diego', 'CA', '92101', 'Maria Garcia', '555-1502', 'B-', '2024-01-15 08:00:00'),
-('PAT016', 'Jessica', 'Rodriguez', '1989-07-19', 'Female', '555-1601', 'jrodriguez@email.com', '729 Magnolia St', 'Tampa', 'FL', '33601', 'Luis Rodriguez', '555-1602', 'AB-', '2024-01-16 09:00:00'),
-('PAT017', 'Andrew', 'Lewis', '1976-03-06', 'Male', '555-1701', 'alewis@email.com', '618 Sycamore Ave', 'Minneapolis', 'MN', '55401', 'Beth Lewis', '555-1702', 'O+', '2024-01-17 10:00:00'),
-('PAT018', 'Nicole', 'Lee', '1992-11-23', 'Female', '555-1801', 'nlee@email.com', '507 Redwood Dr', 'Portland', 'OR', '97202', 'Kevin Lee', '555-1802', 'A+', '2024-01-18 11:00:00'),
-('PAT019', 'Joshua', 'Walker', '1981-08-08', 'Male', '555-1901', 'jwalker@email.com', '394 Fir St', 'Salt Lake City', 'UT', '84101', 'Amy Walker', '555-1902', 'B+', '2024-01-19 12:00:00'),
-('PAT020', 'Stephanie', 'Hall', '1986-04-17', 'Female', '555-2001', 'shall@email.com', '283 Palm Ave', 'Sacramento', 'CA', '95814', 'Greg Hall', '555-2002', 'AB+', '2024-01-20 13:00:00');
-
--- =============================================
--- TABLE 2: PROVIDERS
--- Healthcare providers (doctors, nurses, specialists)
--- =============================================
-DROP TABLE IF EXISTS Providers;
-
-CREATE TABLE Providers (
+CREATE TABLE IF NOT EXISTS providers_test (
     ProviderID STRING NOT NULL,
     FirstName STRING NOT NULL,
     LastName STRING NOT NULL,
@@ -615,37 +240,29 @@ CREATE TABLE Providers (
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Healthcare providers including doctors, nurses, and specialists';
+INSERT INTO providers_test VALUES
+('PRV001', 'Dr. William', 'Chen', 'Cardiology', 'LIC001234', '112-555-9001', 'w.chen@hospital.com', 'Cardiology', '2020-01-15', TRUE, '2024-01-01 10:00:00'),
+('PRV002', 'Dr. Maria', 'Rodriguez', 'Internal Medicine', 'LIC002345', '392-555-9002', 'm.rodriguez@hospital.com', 'Internal Medicine', '2019-03-22', TRUE, '2024-01-02 11:00:00'),
+('PRV003', 'Dr. James', 'Thompson', 'Emergency Medicine', 'LIC003456', '630-555-9003', 'j.thompson@hospital.com', 'Emergency', '2021-06-10', TRUE, '2024-01-03 12:00:00'),
+('PRV004', 'Dr. Sarah', 'Kim', 'Pediatrics', 'LIC004567', '333-555-9004', 's.kim@hospital.com', 'Pediatrics', '2018-09-08', TRUE, '2024-01-04 13:00:00'),
+('PRV005', 'Dr. Robert', 'Johnson', 'Orthopedics', 'LIC005678', '499-555-9005', 'r.johnson@hospital.com', 'Orthopedics', '2017-11-12', TRUE, '2024-01-05 14:00:00'),
+('PRV006', 'Dr. Lisa', 'Davis', 'Dermatology', 'LIC006789', '310-555-9006', 'l.davis@hospital.com', 'Dermatology', '2022-02-28', TRUE, '2024-01-06 15:00:00'),
+('PRV007', 'Dr. Michael', 'Wilson', 'Neurology', 'LIC007890', '222-555-9007', 'm.wilson@hospital.com', 'Neurology', '2019-07-14', TRUE, '2024-01-07 16:00:00'),
+('PRV008', 'Dr. Jennifer', 'Brown', 'Oncology', 'LIC008901', '998-555-9008', 'j.brown@hospital.com', 'Oncology', '2020-05-03', TRUE, '2024-01-08 17:00:00'),
+('PRV009', 'Dr. David', 'Miller', 'Psychiatry', 'LIC009012', '464-555-9009', 'd.miller@hospital.com', 'Psychiatry', '2021-10-17', TRUE, '2024-01-09 18:00:00'),
+('PRV010', 'Dr. Amanda', 'Garcia', 'Gynecology', 'LIC010123', '332-555-9010', 'a.garcia@hospital.com', 'Gynecology', '2018-12-05', TRUE, '2024-01-10 19:00:00'),
+('PRV011', 'Dr. Christopher', 'Martinez', 'Radiology', 'LIC011234', '892-555-9011', 'c.martinez@hospital.com', 'Radiology', '2019-04-21', TRUE, '2024-01-11 20:00:00'),
+('PRV012', 'Dr. Emily', 'Anderson', 'Anesthesiology', 'LIC012345', '283-555-9012', 'e.anderson@hospital.com', 'Anesthesiology', '2020-08-30', TRUE, '2024-01-12 21:00:00'),
+('PRV013', 'Dr. Kevin', 'Taylor', 'Pulmonology', 'LIC013456', '176-555-9013', 'k.taylor@hospital.com', 'Pulmonology', '2017-01-18', TRUE, '2024-01-13 22:00:00'),
+('PRV014', 'Dr. Rachel', 'Thomas', 'Endocrinology', 'LIC014567', '520-555-9014', 'r.thomas@hospital.com', 'Endocrinology', '2022-03-12', TRUE, '2024-01-14 23:00:00'),
+('PRV015', 'Dr. Matthew', 'Jackson', 'Gastroenterology', 'LIC015678', '348-555-9015', 'm.jackson@hospital.com', 'Gastroenterology', '2018-06-27', TRUE, '2024-01-15 08:00:00'),
+('PRV016', 'Dr. Jessica', 'White', 'Nephrology', 'LIC016789', '762-555-9016', 'j.white@hospital.com', 'Nephrology', '2021-09-14', TRUE, '2024-01-16 09:00:00'),
+('PRV017', 'Dr. Andrew', 'Harris', 'Urology', 'LIC017890', '198-555-9017', 'a.harris@hospital.com', 'Urology', '2019-12-08', TRUE, '2024-01-17 10:00:00'),
+('PRV018', 'Dr. Nicole', 'Martin', 'Rheumatology', 'LIC018901', '377-555-9018', 'n.martin@hospital.com', 'Rheumatology', '2020-11-23', TRUE, '2024-01-18 11:00:00'),
+('PRV019', 'Dr. Joshua', 'Lee', 'Infectious Disease', 'LIC019012', '409-555-9019', 'j.lee@hospital.com', 'Internal Medicine', '2018-04-06', TRUE, '2024-01-19 12:00:00'),
+('PRV020', 'Dr. Stephanie', 'Walker', 'Family Medicine', 'LIC020123', '187-555-9020', 's.walker@hospital.com', 'Family Medicine', '2022-07-19', TRUE, '2024-01-20 13:00:00');
 
--- Insert synthetic provider data
-INSERT INTO Providers VALUES
-('PRV001', 'Dr. William', 'Chen', 'Cardiology', 'LIC001234', '555-9001', 'w.chen@hospital.com', 'Cardiology', '2020-01-15', TRUE, '2024-01-01 10:00:00'),
-('PRV002', 'Dr. Maria', 'Rodriguez', 'Internal Medicine', 'LIC002345', '555-9002', 'm.rodriguez@hospital.com', 'Internal Medicine', '2019-03-22', TRUE, '2024-01-02 11:00:00'),
-('PRV003', 'Dr. James', 'Thompson', 'Emergency Medicine', 'LIC003456', '555-9003', 'j.thompson@hospital.com', 'Emergency', '2021-06-10', TRUE, '2024-01-03 12:00:00'),
-('PRV004', 'Dr. Sarah', 'Kim', 'Pediatrics', 'LIC004567', '555-9004', 's.kim@hospital.com', 'Pediatrics', '2018-09-08', TRUE, '2024-01-04 13:00:00'),
-('PRV005', 'Dr. Robert', 'Johnson', 'Orthopedics', 'LIC005678', '555-9005', 'r.johnson@hospital.com', 'Orthopedics', '2017-11-12', TRUE, '2024-01-05 14:00:00'),
-('PRV006', 'Dr. Lisa', 'Davis', 'Dermatology', 'LIC006789', '555-9006', 'l.davis@hospital.com', 'Dermatology', '2022-02-28', TRUE, '2024-01-06 15:00:00'),
-('PRV007', 'Dr. Michael', 'Wilson', 'Neurology', 'LIC007890', '555-9007', 'm.wilson@hospital.com', 'Neurology', '2019-07-14', TRUE, '2024-01-07 16:00:00'),
-('PRV008', 'Dr. Jennifer', 'Brown', 'Oncology', 'LIC008901', '555-9008', 'j.brown@hospital.com', 'Oncology', '2020-05-03', TRUE, '2024-01-08 17:00:00'),
-('PRV009', 'Dr. David', 'Miller', 'Psychiatry', 'LIC009012', '555-9009', 'd.miller@hospital.com', 'Psychiatry', '2021-10-17', TRUE, '2024-01-09 18:00:00'),
-('PRV010', 'Dr. Amanda', 'Garcia', 'Gynecology', 'LIC010123', '555-9010', 'a.garcia@hospital.com', 'Gynecology', '2018-12-05', TRUE, '2024-01-10 19:00:00'),
-('PRV011', 'Dr. Christopher', 'Martinez', 'Radiology', 'LIC011234', '555-9011', 'c.martinez@hospital.com', 'Radiology', '2019-04-21', TRUE, '2024-01-11 20:00:00'),
-('PRV012', 'Dr. Emily', 'Anderson', 'Anesthesiology', 'LIC012345', '555-9012', 'e.anderson@hospital.com', 'Anesthesiology', '2020-08-30', TRUE, '2024-01-12 21:00:00'),
-('PRV013', 'Dr. Kevin', 'Taylor', 'Pulmonology', 'LIC013456', '555-9013', 'k.taylor@hospital.com', 'Pulmonology', '2017-01-18', TRUE, '2024-01-13 22:00:00'),
-('PRV014', 'Dr. Rachel', 'Thomas', 'Endocrinology', 'LIC014567', '555-9014', 'r.thomas@hospital.com', 'Endocrinology', '2022-03-12', TRUE, '2024-01-14 23:00:00'),
-('PRV015', 'Dr. Matthew', 'Jackson', 'Gastroenterology', 'LIC015678', '555-9015', 'm.jackson@hospital.com', 'Gastroenterology', '2018-06-27', TRUE, '2024-01-15 08:00:00'),
-('PRV016', 'Dr. Jessica', 'White', 'Nephrology', 'LIC016789', '555-9016', 'j.white@hospital.com', 'Nephrology', '2021-09-14', TRUE, '2024-01-16 09:00:00'),
-('PRV017', 'Dr. Andrew', 'Harris', 'Urology', 'LIC017890', '555-9017', 'a.harris@hospital.com', 'Urology', '2019-12-08', TRUE, '2024-01-17 10:00:00'),
-('PRV018', 'Dr. Nicole', 'Martin', 'Rheumatology', 'LIC018901', '555-9018', 'n.martin@hospital.com', 'Rheumatology', '2020-11-23', TRUE, '2024-01-18 11:00:00'),
-('PRV019', 'Dr. Joshua', 'Lee', 'Infectious Disease', 'LIC019012', '555-9019', 'j.lee@hospital.com', 'Internal Medicine', '2018-04-06', TRUE, '2024-01-19 12:00:00'),
-('PRV020', 'Dr. Stephanie', 'Walker', 'Family Medicine', 'LIC020123', '555-9020', 's.walker@hospital.com', 'Family Medicine', '2022-07-19', TRUE, '2024-01-20 13:00:00');
-
--- =============================================
--- TABLE 3: INSURANCE
--- Insurance coverage information for patients
--- =============================================
-DROP TABLE IF EXISTS Insurance;
-
-CREATE TABLE Insurance (
+CREATE TABLE IF NOT EXISTS insurance_test (
     InsuranceID STRING NOT NULL,
     PatientID STRING NOT NULL,
     InsuranceCompany STRING NOT NULL,
@@ -658,14 +275,11 @@ CREATE TABLE Insurance (
     CoPayAmount DECIMAL(10,2),
     IsActive BOOLEAN DEFAULT TRUE,
     CreatedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-    CONSTRAINT pk_insurance PRIMARY KEY (InsuranceID),
-    CONSTRAINT fk_insurance_patient FOREIGN KEY (PatientID) REFERENCES Patients(PatientID)
+    CONSTRAINT pk_insurance PRIMARY KEY (InsuranceID)
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Patient insurance coverage information and policy details';
-
--- Insert synthetic insurance data
-INSERT INTO Insurance VALUES
+INSERT INTO insurance_test VALUES
 ('INS001', 'PAT001', 'Blue Cross Blue Shield', 'BCBS001234567', 'GRP001', 'PPO', '2024-01-01', '2024-12-31', 1500.00, 25.00, TRUE, '2024-01-01 10:00:00'),
 ('INS002', 'PAT002', 'Aetna', 'AET002345678', 'GRP002', 'HMO', '2024-01-01', '2024-12-31', 2000.00, 30.00, TRUE, '2024-01-02 11:00:00'),
 ('INS003', 'PAT003', 'Cigna', 'CIG003456789', 'GRP003', 'PPO', '2024-01-01', '2024-12-31', 1000.00, 20.00, TRUE, '2024-01-03 12:00:00'),
@@ -687,13 +301,8 @@ INSERT INTO Insurance VALUES
 ('INS019', 'PAT019', 'Blue Cross Blue Shield', 'BCBS019012345', 'GRP019', 'HMO', '2024-01-01', '2024-12-31', 1800.00, 20.00, TRUE, '2024-01-19 12:00:00'),
 ('INS020', 'PAT020', 'Aetna', 'AET020123456', 'GRP020', 'PPO', '2024-01-01', '2024-12-31', 2600.00, 30.00, TRUE, '2024-01-20 13:00:00');
 
--- =============================================
--- TABLE 4: VISITS
--- Patient visits and appointments
--- =============================================
-DROP TABLE IF EXISTS Visits;
 
-CREATE TABLE Visits (
+CREATE TABLE IF NOT EXISTS visits_test (
     VisitID STRING NOT NULL,
     PatientID STRING NOT NULL,
     ProviderID STRING NOT NULL,
@@ -706,15 +315,11 @@ CREATE TABLE Visits (
     VisitStatus STRING NOT NULL,
     Duration INT, -- in minutes
     CreatedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-    CONSTRAINT pk_visits PRIMARY KEY (VisitID),
-    CONSTRAINT fk_visits_patient FOREIGN KEY (PatientID) REFERENCES Patients(PatientID),
-    CONSTRAINT fk_visits_provider FOREIGN KEY (ProviderID) REFERENCES Providers(ProviderID)
+    CONSTRAINT pk_visits PRIMARY KEY (VisitID)
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Patient visits, appointments, and medical encounters';
-
--- Insert synthetic visits data
-INSERT INTO Visits VALUES
+INSERT INTO visits_test VALUES
 ('VIS001', 'PAT001', 'PRV001', '2024-02-15', '2024-02-15 09:00:00', 'Routine Checkup', 'Annual physical exam', 'Hypertension', 'Continue current medication, follow-up in 3 months', 'Completed', 45, '2024-02-15 09:00:00'),
 ('VIS002', 'PAT002', 'PRV002', '2024-02-16', '2024-02-16 10:30:00', 'Follow-up', 'Diabetes management', 'Type 2 Diabetes', 'Adjust insulin dosage, dietary counseling', 'Completed', 30, '2024-02-16 10:30:00'),
 ('VIS003', 'PAT003', 'PRV003', '2024-02-17', '2024-02-17 14:15:00', 'Emergency', 'Chest pain', 'Acute myocardial infarction', 'Emergency cardiac intervention', 'Completed', 120, '2024-02-17 14:15:00'),
@@ -738,16 +343,8 @@ INSERT INTO Visits VALUES
 ('VIS021', 'PAT001', 'PRV002', '2024-03-15', '2024-03-15 10:00:00', 'Follow-up', 'Blood pressure check', 'Controlled hypertension', 'Continue medication', 'Completed', 15, '2024-03-15 10:00:00'),
 ('VIS022', 'PAT003', 'PRV001', '2024-03-20', '2024-03-20 14:30:00', 'Cardiac Follow-up', 'Post-MI care', 'Recovering well', 'Cardiac rehabilitation', 'Completed', 30, '2024-03-20 14:30:00');
 
--- Continue with remaining tables (LabResults, Prescriptions, Billing)...
--- [Tables 5-7 follow the same pattern with foreign key references to the current catalog]
 
--- =============================================
--- TABLE 5: LAB RESULTS
--- Laboratory test results linked to visits
--- =============================================
-DROP TABLE IF EXISTS LabResults;
-
-CREATE TABLE LabResults (
+CREATE TABLE IF NOT EXISTS lab_results_test (
     LabResultID STRING NOT NULL,
     VisitID STRING NOT NULL,
     PatientID STRING NOT NULL,
@@ -762,15 +359,11 @@ CREATE TABLE LabResults (
     LabTechnician STRING,
     Status STRING DEFAULT 'Final',
     CreatedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-    CONSTRAINT pk_lab_results PRIMARY KEY (LabResultID),
-    CONSTRAINT fk_lab_results_visit FOREIGN KEY (VisitID) REFERENCES Visits(VisitID),
-    CONSTRAINT fk_lab_results_patient FOREIGN KEY (PatientID) REFERENCES Patients(PatientID)
+    CONSTRAINT pk_lab_results PRIMARY KEY (LabResultID)
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Laboratory test results and diagnostic data';
-
--- Insert synthetic lab results data
-INSERT INTO LabResults VALUES
+INSERT INTO lab_results_test VALUES
 ('LAB001', 'VIS001', 'PAT001', 'Total Cholesterol', 'CHOL', '220', '150-200', 'mg/dL', 'High', '2024-02-15', '2024-02-16', 'Tech001', 'Final', '2024-02-16 08:00:00'),
 ('LAB002', 'VIS001', 'PAT001', 'HDL Cholesterol', 'HDL', '45', '>40', 'mg/dL', 'Normal', '2024-02-15', '2024-02-16', 'Tech001', 'Final', '2024-02-16 08:00:00'),
 ('LAB003', 'VIS001', 'PAT001', 'LDL Cholesterol', 'LDL', '145', '<100', 'mg/dL', 'High', '2024-02-15', '2024-02-16', 'Tech001', 'Final', '2024-02-16 08:00:00'),
@@ -782,13 +375,8 @@ INSERT INTO LabResults VALUES
 ('LAB009', 'VIS005', 'PAT005', 'ESR', 'ESR', '65', '0-22', 'mm/hr', 'High', '2024-02-19', '2024-02-20', 'Tech004', 'Final', '2024-02-20 10:00:00'),
 ('LAB010', 'VIS008', 'PAT008', 'CA 15-3', 'CA153', '18', '<31.3', 'U/mL', 'Normal', '2024-02-22', '2024-02-23', 'Tech005', 'Final', '2024-02-23 11:00:00');
 
--- =============================================
--- TABLE 6: PRESCRIPTIONS
--- Medication prescriptions linked to visits
--- =============================================
-DROP TABLE IF EXISTS Prescriptions;
 
-CREATE TABLE Prescriptions (
+CREATE TABLE IF NOT EXISTS prescriptions_test (
     PrescriptionID STRING NOT NULL,
     VisitID STRING NOT NULL,
     PatientID STRING NOT NULL,
@@ -803,29 +391,18 @@ CREATE TABLE Prescriptions (
     Instructions STRING,
     Status STRING DEFAULT 'Active',
     CreatedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-    CONSTRAINT pk_prescriptions PRIMARY KEY (PrescriptionID),
-    CONSTRAINT fk_prescriptions_visit FOREIGN KEY (VisitID) REFERENCES Visits(VisitID),
-    CONSTRAINT fk_prescriptions_patient FOREIGN KEY (PatientID) REFERENCES Patients(PatientID),
-    CONSTRAINT fk_prescriptions_provider FOREIGN KEY (ProviderID) REFERENCES Providers(ProviderID)
+    CONSTRAINT pk_prescriptions PRIMARY KEY (PrescriptionID)
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Medication prescriptions and pharmaceutical orders';
-
--- Insert synthetic prescriptions data
-INSERT INTO Prescriptions VALUES
+INSERT INTO prescriptions_test VALUES
 ('RX001', 'VIS001', 'PAT001', 'PRV001', 'Lisinopril', 'Lisinopril', '10mg', 'Once daily', 30, 3, '2024-02-15', 'Take with or without food', 'Active', '2024-02-15 09:30:00'),
 ('RX002', 'VIS001', 'PAT001', 'PRV001', 'Atorvastatin', 'Atorvastatin', '20mg', 'Once daily at bedtime', 30, 3, '2024-02-15', 'Take at bedtime', 'Active', '2024-02-15 09:30:00'),
 ('RX003', 'VIS002', 'PAT002', 'PRV002', 'Metformin', 'Metformin', '500mg', 'Twice daily', 60, 5, '2024-02-16', 'Take with meals', 'Active', '2024-02-16 10:45:00'),
 ('RX004', 'VIS002', 'PAT002', 'PRV002', 'Insulin Glargine', 'Insulin Glargine', '20 units', 'Once daily at bedtime', 1, 2, '2024-02-16', 'Inject subcutaneously', 'Active', '2024-02-16 10:45:00'),
 ('RX005', 'VIS003', 'PAT003', 'PRV003', 'Aspirin', 'Aspirin', '81mg', 'Once daily', 30, 3, '2024-02-17', 'Take with food', 'Active', '2024-02-17 15:00:00');
 
--- =============================================
--- TABLE 7: BILLING
--- Billing information for visits and services
--- =============================================
-DROP TABLE IF EXISTS Billing;
-
-CREATE TABLE Billing (
+CREATE TABLE IF NOT EXISTS billing_test (
     BillID STRING NOT NULL,
     PatientID STRING NOT NULL,
     VisitID STRING NOT NULL,
@@ -840,270 +417,47 @@ CREATE TABLE Billing (
     BillingDate DATE NOT NULL,
     PaymentDueDate DATE,
     CreatedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-    CONSTRAINT pk_billing PRIMARY KEY (BillID),
-    CONSTRAINT fk_billing_patient FOREIGN KEY (PatientID) REFERENCES Patients(PatientID),
-    CONSTRAINT fk_billing_visit FOREIGN KEY (VisitID) REFERENCES Visits(VisitID)
+    CONSTRAINT pk_billing PRIMARY KEY (BillID)
 ) USING DELTA
 TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 COMMENT 'Billing information, charges, and payment tracking';
-
--- Insert synthetic billing data
-INSERT INTO Billing VALUES
+INSERT INTO billing_test VALUES
 ('BILL001', 'PAT001', 'VIS001', '2024-02-15', '99213', 'Office visit, established patient, level 3', 250.00, 200.00, 25.00, 25.00, 'Partial Payment', '2024-02-16', '2024-03-16', '2024-02-16 10:00:00'),
 ('BILL002', 'PAT002', 'VIS002', '2024-02-16', '99214', 'Office visit, established patient, level 4', 350.00, 280.00, 30.00, 40.00, 'Partial Payment', '2024-02-17', '2024-03-17', '2024-02-17 11:00:00'),
 ('BILL003', 'PAT003', 'VIS003', '2024-02-17', '99281', 'Emergency department visit, level 1', 1500.00, 1200.00, 0.00, 300.00, 'Pending', '2024-02-18', '2024-03-18', '2024-02-18 12:00:00'),
 ('BILL004', 'PAT004', 'VIS004', '2024-02-18', '99382', 'Preventive medicine, new patient, 1-4 years', 200.00, 160.00, 15.00, 25.00, 'Partial Payment', '2024-02-19', '2024-03-19', '2024-02-19 13:00:00'),
 ('BILL005', 'PAT005', 'VIS005', '2024-02-19', '99243', 'Office consultation, level 3', 400.00, 320.00, 35.00, 45.00, 'Partial Payment', '2024-02-20', '2024-03-20', '2024-02-20 14:00:00');
 
--- =============================================
--- VERIFICATION QUERIES
--- Run these to verify successful deployment
--- =============================================
-
--- Query 1: Verify all tables exist
-SHOW TABLES;
-
--- Query 2: Check table row counts
-SELECT 
-  'Patients' as table_name, COUNT(*) as row_count FROM Patients
-UNION ALL
-SELECT 'Providers', COUNT(*) FROM Providers
-UNION ALL
-SELECT 'Insurance', COUNT(*) FROM Insurance
-UNION ALL  
-SELECT 'Visits', COUNT(*) FROM Visits
-UNION ALL
-SELECT 'LabResults', COUNT(*) FROM LabResults
-UNION ALL
-SELECT 'Prescriptions', COUNT(*) FROM Prescriptions
-UNION ALL
-SELECT 'Billing', COUNT(*) FROM Billing
-ORDER BY table_name;
-
--- Query 3: Test joins and relationships
-SELECT 
-    p.PatientID,
-    CONCAT(p.FirstName, ' ', p.LastName) AS PatientName,
-    v.VisitDate,
-    pr.Specialty,
-    v.Diagnosis
-FROM Patients p
-JOIN Visits v ON p.PatientID = v.PatientID
-JOIN Providers pr ON v.ProviderID = pr.ProviderID
-ORDER BY v.VisitDate DESC
-LIMIT 10;
-
--- =============================================
--- SUMMARY
--- =============================================
--- Successfully created healthcare database schema with:
--- - 7 tables with proper relationships
--- - 20 patients, 20 providers, 20 insurance records
--- - 22 visits, 10 lab results, 5 prescriptions, 5 billing records
--- - Foreign key constraints for data integrity
--- - Configurable catalog name via ${CATALOG_NAME} variable
--- =============================================
 """
 
 TAG_APPLICATIONS_SQL = """
--- Databricks notebook source
--- MAGIC %md
--- MAGIC # 🔐 Healthcare ABAC Policies Library (SQL)
--- MAGIC
--- MAGIC This notebook defines reusable Attribute-Based Access Control (ABAC) policies for healthcare data governance using Unity Catalog.
--- MAGIC
--- MAGIC ## 📋 Prerequisites
--- MAGIC - Unity Catalog enabled with ABAC policies feature enabled
--- MAGIC - Healthcare tag policies created (from `CreateHealthcareTagPolicies.ipynb`)
--- MAGIC - ABAC masking functions deployed (from `comprehensive_abac_functions.sql`)
--- MAGIC - Healthcare account groups created (from `CreateHealthcareGroups_Fixed.ipynb`)
--- MAGIC - Appropriate permissions to create policies on schema/catalog
--- MAGIC
--- MAGIC ## 🎯 Policy Library Overview
--- MAGIC This notebook creates **7 reusable ABAC policies** that can be applied to any healthcare tables:
--- MAGIC
--- MAGIC 1. **Deterministic Masking Policy** - Cross-table patient ID consistency
--- MAGIC 2. **Time-Based Access Policy** - Business hours restriction
--- MAGIC 3. **Policy Expiry Access** - Temporary auditor access control
--- MAGIC 4. **Seniority-Based Masking** - Role-based patient name privacy
--- MAGIC 5. **Regional Data Governance** - Geographic access control
--- MAGIC 6. **Age Demographics Masking** - Birth date to age group conversion
--- MAGIC 7. **Insurance Verification Masking** - Role-based financial data access
--- MAGIC
--- MAGIC ## ⚠️ Important Notes
--- MAGIC - This notebook creates **reusable policy definitions only**
--- MAGIC - No policies are bound to specific tables or columns
--- MAGIC - Uses `apscat.healthcare` schema
--- MAGIC - Policies use tag-based conditions for flexible application
+ALTER TABLE {CATALOG}.{SCHEMA}.lab_results_test SET TAGS ('hipaa_compliance_healthcare' = 'Required');
+ALTER TABLE {CATALOG}.{SCHEMA}.lab_results_test ALTER COLUMN ResultValue SET TAGS ('phi_level_healthcare' = 'High', 'shift_hours_healthcare' = 'Standard_Business');
+ALTER TABLE {CATALOG}.{SCHEMA}.lab_results_test ALTER COLUMN TestName SET TAGS ('phi_level_healthcare' = 'Medium', 'shift_hours_healthcare' = 'Standard_Business');
+ALTER TABLE {CATALOG}.{SCHEMA}.lab_results_test ALTER COLUMN PatientID SET TAGS ('pii_type_healthcare' = 'patient_id', 'phi_level_healthcare' = 'High');
 
--- COMMAND ----------
 
--- Set schema context and verify table existence
--- Verify tables exist and show their structure
-SHOW TABLES;
+ALTER TABLE {CATALOG}.{SCHEMA}.billing_test SET TAGS ('hipaa_compliance_healthcare' = 'Not_Required');
+ALTER TABLE {CATALOG}.{SCHEMA}.billing_test ALTER COLUMN ChargeAmount SET TAGS ('data_sensitivity_healthcare' = 'Sensitive');
 
--- Verify Patients table structure
-DESCRIBE TABLE Patients;
 
-SELECT "✅ Ready to create ABAC policies in current schema" as status;
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test SET TAGS ('hipaa_compliance_healthcare' = 'Required');
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test ALTER COLUMN FirstName SET TAGS ('pii_type_healthcare' = 'patient_name');
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test ALTER COLUMN LastName SET TAGS ('pii_type_healthcare' = 'patient_name');
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test ALTER COLUMN PhoneNumber SET TAGS ('pii_type_healthcare' = 'phone','data_sensitivity_healthcare' = 'Sensitive');
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test ALTER COLUMN Email SET TAGS ('pii_type_healthcare' = 'email','data_sensitivity_healthcare' = 'Internal');
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test ALTER COLUMN DateOfBirth SET TAGS ('pii_type_healthcare' = 'dob', 'phi_level_healthcare' = 'High');
+ALTER TABLE {CATALOG}.{SCHEMA}.patients_test ALTER COLUMN PatientID SET TAGS ('pii_type_healthcare' = 'patient_id', 'phi_level_healthcare' = 'High');
 
--- COMMAND ----------
 
--- MAGIC %md
--- MAGIC ## 🏷️ STEP 1: Verify Healthcare Tables and Apply Tags
--- MAGIC
--- MAGIC Before creating policies, we need to verify our healthcare tables exist and apply the appropriate tags for the ABAC policies to work properly.
--- MAGIC
--- MAGIC ### Table Verification and Tag Application for All 7 Scenarios
--- MAGIC
--- MAGIC First, let's verify we have the expected healthcare tables with the correct column structure.
+ALTER TABLE {CATALOG}.{SCHEMA}.insurance_test SET TAGS ('hipaa_compliance_healthcare' = 'Not_Required');
+ALTER TABLE {CATALOG}.{SCHEMA}.insurance_test ALTER COLUMN PolicyNumber SET TAGS ('data_sensitivity_healthcare' = 'Sensitive', 'phi_level_healthcare' = 'Medium');
+ALTER TABLE {CATALOG}.{SCHEMA}.insurance_test ALTER COLUMN GroupNumber SET TAGS ('data_sensitivity_healthcare' = 'Sensitive','phi_level_healthcare' = 'Medium');
+ALTER TABLE {CATALOG}.{SCHEMA}.insurance_test ALTER COLUMN PatientID SET TAGS ('pii_type_healthcare' = 'patient_id', 'phi_level_healthcare' = 'High');
 
--- COMMAND ----------
-
--- VERIFICATION: Check Healthcare Tables Structure
-
--- Verify key tables and columns exist before applying tags
-SELECT 'Patients table check' as verification_step;
-DESCRIBE TABLE apscat.healthcare.Patients;
-
-SELECT 'Insurance table check' as verification_step;  
-DESCRIBE TABLE apscat.healthcare.Insurance;
-
-SELECT 'LabResults table check' as verification_step;
-DESCRIBE TABLE apscat.healthcare.LabResults;
-
-SELECT 'Billing table check' as verification_step;
-DESCRIBE TABLE apscat.healthcare.Billing;
-
--- Show current context
-SELECT current_catalog() as current_catalog, current_schema() as current_schema;
-
--- COMMAND ----------
-
--- SCENARIO 1: Apply tags for Deterministic Masking
-
--- Tag PatientID columns across tables for consistent masking 
-ALTER TABLE apscat.healthcare.Patients ALTER COLUMN PatientID SET TAGS ('job_role' = 'Healthcare_Analyst', 'data_purpose' = 'Population_Analytics');
-ALTER TABLE apscat.healthcare.Visits ALTER COLUMN PatientID SET TAGS ('job_role' = 'Healthcare_Analyst', 'data_purpose' = 'Population_Analytics');
-ALTER TABLE apscat.healthcare.LabResults ALTER COLUMN PatientID SET TAGS ('job_role' = 'Healthcare_Analyst', 'data_purpose' = 'Population_Analytics');
-ALTER TABLE apscat.healthcare.Prescriptions ALTER COLUMN PatientID SET TAGS ('job_role' = 'Healthcare_Analyst', 'data_purpose' = 'Population_Analytics');
-
-SELECT "✅ SCENARIO 1: PatientID columns tagged for deterministic masking" as status;
-
--- COMMAND ----------
-
--- SCENARIO 2: Apply tags for Time-Based Access Control
-
--- Tag LabResults table for time-based access
-ALTER TABLE apscat.healthcare.LabResults SET TAGS ('shift_hours' = 'Standard_Business', 'job_role' = 'Lab_Technician');
-ALTER TABLE apscat.healthcare.LabResults ALTER COLUMN ResultValue SET TAGS ('phi_level' = 'Full_PHI', 'shift_hours' = 'Standard_Business');
-ALTER TABLE apscat.healthcare.LabResults ALTER COLUMN TestName SET TAGS ('phi_level' = 'Full_PHI', 'shift_hours' = 'Standard_Business');
-
-SELECT "✅ SCENARIO 2: LabResults tagged for time-based access" as status;
-
--- COMMAND ----------
-
--- SCENARIO 3: Apply tags for Policy Expiry
-
--- Tag Billing table for temporary auditor access
-ALTER TABLE apscat.healthcare.Billing SET TAGS ('access_expiry_date' = '2025-12-31', 'job_role' = 'External_Auditor', 'audit_project' = 'Q4_Compliance_Review');
-ALTER TABLE apscat.healthcare.Billing ALTER COLUMN ChargeAmount SET TAGS ('data_purpose' = 'Financial_Operations', 'access_expiry_date' = '2025-12-31');
-ALTER TABLE apscat.healthcare.Billing ALTER COLUMN BillingStatus SET TAGS ('data_purpose' = 'Financial_Operations', 'access_expiry_date' = '2025-12-31');
-
-SELECT "✅ SCENARIO 3: Billing table tagged for policy expiry" as status;
-
--- COMMAND ----------
-
--- SCENARIO 4: Apply tags for Seniority-Based Name Masking
-
--- Tag patient name columns for seniority-based access  
-ALTER TABLE apscat.healthcare.Patients ALTER COLUMN FirstName SET TAGS ('seniority' = 'Senior_Staff', 'job_role' = 'Healthcare_Worker', 'phi_level' = 'Full_PHI');
-ALTER TABLE apscat.healthcare.Patients ALTER COLUMN LastName SET TAGS ('seniority' = 'Senior_Staff', 'job_role' = 'Healthcare_Worker', 'phi_level' = 'Full_PHI');
-
-SELECT "✅ SCENARIO 4: Patient name columns tagged for seniority-based masking" as status;
-
--- COMMAND ----------
-
--- SCENARIO 5: Apply tags for Regional Data Governance
-
--- Tag Patients table for regional access control
-ALTER TABLE apscat.healthcare.Patients SET TAGS ('region' = 'North', 'data_residency' = 'Regional_Boundary', 'job_role' = 'Regional_Staff');
-ALTER TABLE apscat.healthcare.Patients ALTER COLUMN Address SET TAGS ('region' = 'North', 'data_residency' = 'Regional_Boundary');
-
-SELECT "✅ SCENARIO 5: Patients table tagged for regional control" as status;
-
--- COMMAND ----------
-
--- SCENARIO 6: Apply tags for Age Demographics Masking
-
--- Tag DateOfBirth for age group masking
-ALTER TABLE apscat.healthcare.Patients ALTER COLUMN DateOfBirth SET TAGS ('research_approval' = 'Demographics_Study', 'phi_level' = 'Limited_Dataset', 'job_role' = 'Population_Health_Researcher');
-
-SELECT "✅ SCENARIO 6: DateOfBirth tagged for age demographics masking" as status;
-
--- COMMAND ----------
-
--- SCENARIO 7: Apply tags for Insurance Verification
-
--- Tag Insurance table for role-based verification
-ALTER TABLE apscat.healthcare.Insurance SET TAGS ('verification_level' = 'Full', 'job_role' = 'Insurance_Coordinator');
-ALTER TABLE apscat.healthcare.Insurance ALTER COLUMN PolicyNumber SET TAGS ('verification_level' = 'Basic', 'job_role' = 'Billing_Clerk');
-ALTER TABLE apscat.healthcare.Insurance ALTER COLUMN GroupNumber SET TAGS ('verification_level' = 'Standard', 'job_role' = 'Insurance_Coordinator');
-
-SELECT "✅ SCENARIO 7: Insurance table tagged for role-based verification" as status;
-
--- COMMAND ----------
-
--- Verify Tag Applications - Table Level
-
-SELECT 
-    table_name,
-    tag_name,
-    tag_value,
-    'table' as tag_scope
-FROM system.information_schema.table_tags 
-WHERE schema_name = 'healthcare'
-ORDER BY table_name, tag_name;
-
--- COMMAND ----------
-
--- Verify Tag Applications - Column Level
-
-SELECT 
-    table_name,
-    column_name,
-    tag_name,
-    tag_value,
-    'column' as tag_scope
-FROM system.information_schema.column_tags
-WHERE schema_name = 'healthcare'
-ORDER BY table_name, column_name, tag_name;
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ## 🎉 Healthcare ABAC Tags Applied Successfully!
--- MAGIC
--- MAGIC ### ✅ **Tag Application Complete:**
--- MAGIC All 7 healthcare ABAC scenarios have been tagged successfully:
--- MAGIC
--- MAGIC 1. ✅ **Deterministic Masking** - PatientID columns across tables
--- MAGIC 2. ✅ **Time-Based Access** - LabResults table and columns
--- MAGIC 3. ✅ **Policy Expiry** - Billing table for temporary auditor access
--- MAGIC 4. ✅ **Seniority Masking** - Patient name columns
--- MAGIC 5. ✅ **Regional Control** - Patients table for geographic restrictions
--- MAGIC 6. ✅ **Age Demographics** - DateOfBirth for research studies
--- MAGIC 7. ✅ **Insurance Verification** - Insurance table for role-based access
--- MAGIC
--- MAGIC ### 🔄 **Next Steps:**
--- MAGIC 1. **Deploy ABAC masking functions** from `comprehensive_abac_functions.sql`
--- MAGIC 2. **Create ABAC policies** using Unity Catalog CREATE POLICY statements
--- MAGIC 3. **Assign users to account groups** created earlier
--- MAGIC 4. **Test policy enforcement** with different user roles
--- MAGIC
--- MAGIC ### 🏥 **Healthcare Data Governance Ready!**
--- MAGIC Your healthcare data is now properly tagged for comprehensive ABAC policy enforcement using Databricks Unity Catalog.
 """
 
-TEST_TABLES = ["patients_test", "medical_records_test", "prescriptions_test", 
-               "lab_results_test", "providers_test", "appointments_test"]
+TEST_TABLES = ["insurance_test", "patients_test", "billing_test", "visits_test", "lab_results_test", "prescriptions_test", "providers_test"]
+
+
+
