@@ -548,11 +548,9 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
         progress(0.2, desc="Running test queries...")
 
         # Simple test queries to show masking works
-        test_queries = [
-            f"SELECT customer_id, email, phone, ssn FROM {catalog}.{schema}.customers_test LIMIT 3",
-            f"SELECT card_id, card_number FROM {catalog}.{schema}.credit_cards_test LIMIT 2",
-            f"SELECT transaction_id, amount, ip_address FROM {catalog}.{schema}.transactions_test LIMIT 3"
-        ]
+        test_queries = []
+        for table in test_tables:
+            test_queries.append(f"SELECT * FROM {catalog}.{schema}.{table} LIMIT 2;")
 
         results = []
 
@@ -569,14 +567,12 @@ def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request,
 
         output = f"✅ **Testing Complete!**\n\n📊 **Test Results:**\n\n"
         for r in results:
-            output += f"{r} "
+            output += f"- {r} \n"
 
         output += f"\n\n**Note:** Check the actual data in Databricks to see masking in action!"
-        output += f"\n\nQuery your test tables:\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.customers_test`\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.accounts_test`\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.credit_cards_test`\n"
-        output += f"- `SELECT * FROM {catalog}.{schema}.transactions_test`\n"
+        output += f"\n\nQuery your test tables:\n\n"
+        for q in test_queries:
+            output += f"- `{q}` \n"
 
         return output
 
@@ -594,14 +590,15 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
             
             ### Workflow:
             **Required Steps:**
-            1. **Create Functions** - Deploy masking/filtering UDFs
-            2. **Create Tag Policies** - Define governed tags
-            3. **Create ABAC Policies** - Apply policies using tags
+            1. **Set Service Principal Permissions** - Grant privileges listed in 'Documentation' tab
+            2. **Create Functions** - Deploy masking/filtering UDFs
+            3. **Create Tag Policies** - Define governed tags
+            4. **Create ABAC Policies** - Apply policies using tags
             
-            **Optional Testing Steps:**
-            4. **Create Test Data** - Generate sample tables (with _test suffix)
-            5. **Tag Test Data** - Apply tags to test tables
-            6. **Test Policies** - Run queries to verify masking works
+            **Optional Testing Steps:**\n
+            5. **Create Test Data** - Generate sample tables (with _test suffix)\n
+            6. **Tag Test Data** - Apply tags to test tables\n
+            7. **Test Policies** - Run queries to verify masking works\n
             """)
 
             with gr.Row():
