@@ -14,7 +14,8 @@ except Exception as e:
     print(f"Error initializing WorkspaceClient: {e}")
     w = None
 
-# Hardcode warehouse ID for Azure workspace (most reliable)
+# SQL Warehouse configuration
+# Prefer env var override, otherwise fall back to a known warehouse for this workspace.
 WAREHOUSE_ID = os.getenv("WAREHOUSE_ID") or "b0620c9f66bdeda3"
 print(f"Using WAREHOUSE_ID: {WAREHOUSE_ID}")
 
@@ -193,10 +194,14 @@ def create_tag_policy(tag_key, description, values, use_user_token=False, user_t
 def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Deploy functions to selected catalog and schema"""
     try:
-        # Validate inputs
-        if not catalog or not schema or not industry:
-            return f"❌ **Error**: Missing required fields\n\n- Catalog: {'✅' if catalog else '❌ Not selected'}\n- Schema: {'✅' if schema else '❌ Not selected'}\n- Industry: {'✅' if industry else '❌ Not selected'}\n\nPlease fill in all fields and try again."
+        # Validate inputs - catalog and industry are required, schema defaults to "default"
+        if not catalog or not industry:
+            return f"❌ **Error**: Missing required fields\n\n- Catalog: {'✅' if catalog else '❌ Not selected'}\n- Industry: {'✅' if industry else '❌ Not selected'}\n\nPlease fill in all required fields and try again."
 
+        # Use "default" schema if not specified
+        if not schema or schema.strip() == "":
+            schema = "default"
+            
         # Show what was selected for debugging
         progress(0.0, desc=f"Selected: {catalog}.{schema} ({industry})")
 
@@ -284,8 +289,12 @@ def deploy_functions(catalog, schema, industry, use_user_auth, request: gr.Reque
 def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Create tag policies for the industry"""
     try:
-        if not catalog or not schema or not industry:
-            return "❌ Error: Please select catalog, schema, and industry"
+        if not catalog or not industry:
+            return "❌ Error: Please select catalog and industry"
+        
+        # Use "default" schema if not specified
+        if not schema or schema.strip() == "":
+            schema = "default"
 
         # Extract user token if using user authorization
         user_token = None
@@ -328,12 +337,17 @@ def deploy_tag_policies(catalog, schema, industry, use_user_auth, request: gr.Re
     except Exception as e:
         return f"❌ **Tag Policy Creation Failed**\n\n{str(e)}"
 
-# Step 3: Create ABAC Policies
+# Step 3: Create ABAC Policies (at Catalog level)
 def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
-    """Create ABAC policies"""
+    """Create ABAC policies at catalog level (functions are referenced from schema)"""
     try:
-        if not catalog or not schema or not industry:
-            return "❌ Error: Please select catalog, schema, and industry"
+        # Catalog and industry are required, schema defaults to "default" for function references
+        if not catalog or not industry:
+            return "❌ Error: Please select catalog and industry"
+        
+        # Use "default" schema if not specified (for function references)
+        if not schema or schema.strip() == "":
+            schema = "default"
 
         # Extract user token if using user authorization
         user_token = None
@@ -353,7 +367,7 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
 
         progress(0.1, desc="Reading ABAC policy definitions...")
 
-        # Replace placeholders
+        # Replace placeholders - ABAC policies are at catalog level, functions are in schema
         policies_sql = template.ABAC_POLICIES_SQL.replace("{CATALOG}", catalog).replace("{SCHEMA}", schema)
 
         # Split by semicolon and keep only parts that contain CREATE POLICY
@@ -361,7 +375,7 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
                      if s.strip() and ('CREATE' in s.upper() or 'DROP' in s.upper())]
         total = len(statements)
 
-        progress(0.2, desc=f"Creating {total} ABAC policies...")
+        progress(0.2, desc=f"Creating {total} ABAC policies at catalog level...")
 
         success_count = 0
         errors = []
@@ -378,7 +392,7 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
         progress(1.0, desc="Complete!")
 
         if success_count == total:
-            return f"✅ **Step 3 Complete!**\n\n📊 **Created {success_count} ABAC policies** in `{catalog}.{schema}`\n\n**Optional:** Create test data to try it out (Step 4)"
+            return f"✅ **Step 3 Complete!**\n\n📊 **Created {success_count} ABAC policies** on catalog `{catalog}`\n\n(Functions from `{catalog}.{schema}`)\n\n**Optional:** Create test data to try it out (Step 4)"
         else:
             result = f"⚠️ **Partial Success**\n\n✅ Created: {success_count}/{total}\n❌ Failed: {len(errors)}\n\n"
             for err in errors[:3]:
@@ -392,8 +406,12 @@ def deploy_abac_policies(catalog, schema, industry, use_user_auth, request: gr.R
 def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Create test tables with sample data"""
     try:
-        if not catalog or not schema or not industry:
-            return "❌ Error: Please select catalog, schema, and industry"
+        if not catalog or not industry:
+            return "❌ Error: Please select catalog and industry"
+        
+        # Use "default" schema if not specified
+        if not schema or schema.strip() == "":
+            schema = "default"
 
         # Extract user token if using user authorization
         user_token = None
@@ -454,8 +472,12 @@ def create_test_data(catalog, schema, industry, use_user_auth, request: gr.Reque
 def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Apply tags to test table columns"""
     try:
-        if not catalog or not schema or not industry:
-            return "❌ Error: Please select catalog, schema, and industry"
+        if not catalog or not industry:
+            return "❌ Error: Please select catalog and industry"
+        
+        # Use "default" schema if not specified
+        if not schema or schema.strip() == "":
+            schema = "default"
 
         # Extract user token if using user authorization
         user_token = None
@@ -521,8 +543,12 @@ def tag_test_data(catalog, schema, industry, use_user_auth, request: gr.Request,
 def test_policies(catalog, schema, industry, use_user_auth, request: gr.Request, progress=gr.Progress()):
     """Run test queries to demonstrate ABAC policies"""
     try:
-        if not catalog or not schema or not industry:
-            return "❌ Error: Please select catalog, schema, and industry"
+        if not catalog or not industry:
+            return "❌ Error: Please select catalog and industry"
+        
+        # Use "default" schema if not specified
+        if not schema or schema.strip() == "":
+            schema = "default"
 
         # Extract user token if using user authorization
         user_token = None
@@ -590,15 +616,19 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
             
             ### Workflow:
             **Required Steps:**
-            1. **Set Service Principal Permissions** - Grant privileges listed in 'Documentation' tab
-            2. **Create Functions** - Deploy masking/filtering UDFs
-            3. **Create Tag Policies** - Define governed tags
-            4. **Create ABAC Policies** - Apply policies using tags
+            1. **Set Service Principal Permissions** - Grant privileges listed in the 'Documentation' tab
+            2. **Create Functions** - Deploy masking/filtering UDFs to a schema (uses `default` if not specified)
+            3. **Create Tag Policies** - Define governed tags (account-level)
+            4. **Create ABAC Policies** - Apply policies (**recommended: catalog-level**; schema-level is possible if you customize templates)
             
-            **Optional Testing Steps:**\n
-            5. **Create Test Data** - Generate sample tables (with _test suffix)\n
-            6. **Tag Test Data** - Apply tags to test tables\n
-            7. **Test Policies** - Run queries to verify masking works\n
+            **Optional Testing Steps:**
+            5. **Create Test Data** - Generate sample tables (with `_test` suffix)
+            6. **Tag Test Data** - Apply tags to test tables
+            7. **Test Policies** - Run queries to verify masking works
+            
+            ℹ️ **Notes:**
+            - Schema is optional. If not selected, functions are created in `default` schema.
+            - In this app, policies are authored at the **catalog level** by default so they can apply across schemas.
             """)
 
             with gr.Row():
@@ -613,15 +643,15 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                     )
 
                     schema_dropdown = gr.Dropdown(
-                        label="Schema",
-                        info="Select existing or type to create new schema",
+                        label="Schema (Optional)",
+                        info="Select schema for functions. Leave empty to use 'default' schema",
                         interactive=True,
                         allow_custom_value=True
                     )
 
                     industry_dropdown = gr.Dropdown(
                         choices=get_available_industries(),
-                        value="Finance",
+                        value="Default",
                         label="Industry",
                         info="Select industry template",
                         interactive=True
@@ -638,20 +668,18 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                 with gr.Column():
                     gr.Markdown("### Industry Templates Available:")
                     gr.Markdown("""
-                    **7 Industries:**
-                    - Finance ✅ Complete
-                    - Healthcare ✅ Complete
-                    - Insurance ✅ Complete
-                    - Manufacturing ⚙️ Partial
-                    - Retail ⚙️ Partial
-                    - Telco ⚙️ Partial
-                    - Government ⚙️ Partial
+                    **8 Industries:**
+                    - **Default ⭐ SUPER-SET** (20 masks, 8 filters, 8 tags, 15 policies, 5 tables)
+                    - Finance
+                    - Insurance
+                    - Healthcare
+                    - Manufacturing
+                    - Retail
+                    - Telco
+                    - Government
                     
-                    **Each includes:**
-                    - Masking/filtering functions
-                    - Tag policy definitions
-                    - ABAC policies (complete or placeholder)
-                    - Test data templates
+                    **Default is recommended** - contains ALL masking/filter types across industries.
+                    Other templates are industry-specific subsets with specialized naming.
                     """)
 
             gr.Markdown("---")

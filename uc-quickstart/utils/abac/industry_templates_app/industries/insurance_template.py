@@ -79,11 +79,11 @@ TAG_DEFINITIONS = [
      ["Confidential", "Internal", "Public"])
 ]
 
-# Step 3: ABAC Policy Definitions
+# Step 3: ABAC Policy Definitions (at Catalog level)
 # Syntax per https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/policies
 ABAC_POLICIES_SQL = """
--- SSN Column Mask Policy
-CREATE OR REPLACE POLICY ssn_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- SSN Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY ssn_mask ON CATALOG {CATALOG}
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4 
 TO `account users`
 FOR TABLES
@@ -91,8 +91,8 @@ MATCH COLUMNS
   hasTagValue('pii_type_insurance','ssn') AS ssn
 ON COLUMN ssn;
 
--- Policy Number Mask Policy
-CREATE OR REPLACE POLICY policy_no_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Policy Number Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY policy_no_mask ON CATALOG {CATALOG}
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_policy_number_last4 
 TO `account users`
 FOR TABLES
@@ -100,8 +100,8 @@ MATCH COLUMNS
   hasTagValue('pii_type_insurance','policy_number') AS policy
 ON COLUMN policy;
 
--- Email Column Mask Policy
-CREATE OR REPLACE POLICY email_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Email Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY email_mask ON CATALOG {CATALOG}
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_email 
 TO `account users`
 FOR TABLES
@@ -109,8 +109,8 @@ MATCH COLUMNS
   hasTagValue('pii_type_insurance','email') AS email
 ON COLUMN email;
 
--- Phone Column Mask Policy
-CREATE OR REPLACE POLICY phone_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Phone Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY phone_mask ON CATALOG {CATALOG}
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone 
 TO `account users`
 FOR TABLES
@@ -118,8 +118,8 @@ MATCH COLUMNS
   hasTagValue('pii_type_insurance','phone') AS phone
 ON COLUMN phone;
 
--- Policy Holder ID Column Mask Policy
-CREATE OR REPLACE POLICY policyholder_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Policy Holder ID Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY policyholder_mask ON CATALOG {CATALOG}
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_policyholder_id_hash 
 TO `account users`
 FOR TABLES
@@ -127,8 +127,8 @@ MATCH COLUMNS
   hasTagValue('pii_type_insurance','id') AS policyholder_id
 ON COLUMN policyholder_id;
 
--- High Value Claims Row Filter Policy
-CREATE OR REPLACE POLICY claims_filter ON SCHEMA {CATALOG}.{SCHEMA}
+-- High Value Claims Row Filter Policy (Catalog Level)
+CREATE OR REPLACE POLICY claims_filter ON CATALOG {CATALOG}
 ROW FILTER {CATALOG}.{SCHEMA}.filter_high_value_claims 
 TO `account users`
 FOR TABLES

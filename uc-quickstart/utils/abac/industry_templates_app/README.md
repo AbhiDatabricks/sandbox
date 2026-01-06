@@ -73,20 +73,25 @@ A Databricks App that provides a simple UI to deploy ABAC (Attribute-Based Acces
 
 ### Deployment Steps
 
+**Naming convention (going forward):**
+- Use a timestamped app name to avoid collisions and to make it obvious “what was deployed when”:
+  - `abacindustry-<YYYYMMDD-HHMM>`
+  - Example: `abacindustry-20260106-1247`
+
 1. **Create the App in Databricks**:
    - Go to your Databricks workspace
    - Click **+ New** → **App** in the sidebar
    - Under "Create from code", choose **Manual**
-   - Name it: `abac-industry-deployer`
+   - Name it: `abacindustry-<YYYYMMDD-HHMM>`
 
 2. **Upload App Files**:
    ```bash
    # Navigate to this directory
    cd uc-quickstart/utils/abac/industry_templates_app
-   
-   # Deploy to Databricks
-   databricks apps deploy abac-industry-deployer \
-     --source-code-path /Workspace/Users/<your-email>/apps/abac-deployer
+
+   # Deploy to Databricks (auto-generates app name with timestamp)
+   chmod +x ./deploy.sh
+   ./deploy.sh
    ```
 
 3. **Configure SQL Warehouse Resource**:
@@ -105,8 +110,11 @@ A Databricks App that provides a simple UI to deploy ABAC (Attribute-Based Acces
      /Workspace/Users/<your-email>/apps/abac-deployer
    
    # Create and start app
-   databricks apps create abac-industry-deployer \
-     --source-code-path /Workspace/Users/<your-email>/apps/abac-deployer
+   databricks apps create abacindustry-<YYYYMMDD-HHMM> \
+     # (then deploy code)
+   
+   databricks apps deploy abacindustry-<YYYYMMDD-HHMM> \
+     --source-code-path /Workspace/Users/<your-email>/apps/abacindustry-<YYYYMMDD-HHMM>
    ```
 
 ## Usage

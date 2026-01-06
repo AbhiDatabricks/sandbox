@@ -81,12 +81,12 @@ TAG_DEFINITIONS = [
      ["true", "false"])
 ]
 
-# Step 3: ABAC Policy Definitions
+# Step 3: ABAC Policy Definitions (at Catalog level)
 # Syntax per https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/policies
 ABAC_POLICIES_SQL = """
--- SSN Column Mask Policy
+-- SSN Column Mask Policy (Catalog Level)
 CREATE OR REPLACE POLICY ssn_mask
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
 COMMENT 'Mask SSN columns tagged with pii_type_finance=ssn'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4
 TO `account users`
@@ -94,9 +94,9 @@ FOR TABLES
 MATCH COLUMNS hasTagValue('pii_type_finance', 'ssn') AS ssn_col
 ON COLUMN ssn_col;
 
--- Email Column Mask Policy
+-- Email Column Mask Policy (Catalog Level)
 CREATE OR REPLACE POLICY email_mask
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
 COMMENT 'Mask email columns tagged with pii_type_finance=email'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_email
 TO `account users`
@@ -104,9 +104,9 @@ FOR TABLES
 MATCH COLUMNS hasTagValue('pii_type_finance', 'email') AS email_col
 ON COLUMN email_col;
 
--- Phone Column Mask Policy
+-- Phone Column Mask Policy (Catalog Level)
 CREATE OR REPLACE POLICY phone_mask
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
 COMMENT 'Mask phone columns tagged with pii_type_finance=phone'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone
 TO `account users`
@@ -114,9 +114,9 @@ FOR TABLES
 MATCH COLUMNS hasTagValue('pii_type_finance', 'phone') AS phone_col
 ON COLUMN phone_col;
 
--- Credit Card Column Mask Policy
+-- Credit Card Column Mask Policy (Catalog Level)
 CREATE OR REPLACE POLICY card_mask
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
 COMMENT 'Mask credit card columns tagged with pii_type_finance=credit_card'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_credit_card
 TO `account users`
@@ -124,9 +124,9 @@ FOR TABLES
 MATCH COLUMNS hasTagValue('pii_type_finance', 'credit_card') AS card_col
 ON COLUMN card_col;
 
--- Account Number Column Mask Policy
+-- Account Number Column Mask Policy (Catalog Level)
 CREATE OR REPLACE POLICY account_mask
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
 COMMENT 'Mask account columns tagged with pii_type_finance=account'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_account_last4
 TO `account users`
@@ -134,9 +134,9 @@ FOR TABLES
 MATCH COLUMNS hasTagValue('pii_type_finance', 'account') AS account_col
 ON COLUMN account_col;
 
--- Income Bracket Column Mask Policy
+-- Income Bracket Column Mask Policy (Catalog Level)
 CREATE OR REPLACE POLICY income_mask
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
 COMMENT 'Mask income columns tagged with pii_type_finance=income'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_income_bracket
 TO `account users`
