@@ -64,18 +64,24 @@ To add a new industry (e.g., Healthcare):
 
 ## Current Industries
 
-- **Default** (`default_template.py`) ⭐ - Generic template for any industry (selected by default)
-- **Finance** (`finance_template.py`) ✅ - Banking, credit cards, transactions
-- **Insurance** (`insurance_template.py`) ✅ - Policies, claims, underwriting
-- **Healthcare** (`healthcare_template.py`) ✅ - Medical records, HIPAA compliance
-- **Manufacturing** (`manufacturing_template.py`) ✅ - Supply chain, IP protection
-- **Retail** (`retail_template.py`) ✅ - E-commerce, customer data
-- **Telco** (`telco_template.py`) ✅ - Subscriber data, call records
-- **Government** (`government_template.py`) ✅ - Security clearances, CUI
+- **Default** (`default_template.py`) ⭐ **SUPER-SET** - Comprehensive template with maximum coverage:
+  - 20 column masking functions
+  - 8 row filter functions
+  - 8 tag policies (generic names, no industry suffix)
+  - 15 ABAC policies
+  - 5 test tables (users, transactions, employees, assets, audit_log)
+- **Finance** (`finance_template.py`) - Banking, credit cards, transactions
+- **Insurance** (`insurance_template.py`) - Policies, claims, underwriting
+- **Healthcare** (`healthcare_template.py`) - Medical records, HIPAA compliance
+- **Manufacturing** (`manufacturing_template.py`) - Supply chain, IP protection
+- **Retail** (`retail_template.py`) - E-commerce, customer data
+- **Telco** (`telco_template.py`) - Subscriber data, call records
+- **Government** (`government_template.py`) - Security clearances, CUI
 
 ## Notes
 
-- **Tag keys should be industry-specific**: Use suffix like `_finance`, `_healthcare` to avoid conflicts
+- **Default uses generic tag names**: No industry suffix (e.g., `pii_type` not `pii_type_finance`)
+- **Industry templates use industry-specific suffix**: e.g., `pii_type_finance`, `pii_type_healthcare`
 - **Use placeholders**: `{CATALOG}` and `{SCHEMA}` are replaced at runtime
 - **Test tables use _test suffix**: Keeps test data separate from production
 - **Fully qualified names**: All functions/policies use `catalog.schema.name` format

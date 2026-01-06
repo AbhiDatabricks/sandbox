@@ -250,28 +250,61 @@ LIMIT 5;
 
 ## 🏭 Industry Templates
 
-### Default ⭐ (Recommended Starting Point)
-**Use Cases:** Generic template applicable to any industry
+### Default ⭐ (SUPER-SET - Recommended Starting Point)
+**Use Cases:** Comprehensive generic template - works for ANY industry. Contains the maximum coverage of all masking, filtering, and policy types.
 
-**Functions:**
-- SSN masking (last 4 digits)
-- Email masking (domain visible)
-- Phone masking (last 4 digits)
-- Credit card masking (last 4 digits)
-- Account number masking
-- ID hashing (deterministic)
-- IP address masking
-- Amount bucketing
-- Business hours filter
-- High value filter
+**Column Masking Functions (20):**
+- `mask_ssn` - SSN (last 4 digits)
+- `mask_email` - Email (domain visible)
+- `mask_phone` - Phone (last 4 digits)
+- `mask_credit_card` - Credit card (PCI-DSS compliant)
+- `mask_account_number` - Account number (last 4)
+- `mask_routing_number` - Routing number (last 2)
+- `mask_name` - Name (first initial + ***)
+- `mask_name_hash` - Name (SHA-256 hash)
+- `mask_address` - Address (city/state only)
+- `mask_dob` - Date of birth (year only)
+- `mask_dob_age_range` - DOB to age bucket
+- `mask_ip_address` - IP (subnet only)
+- `mask_amount_bucket` - Amount ranges ($0-$100, $100-$1K, etc.)
+- `mask_salary_bucket` - Salary ranges (Entry, Junior, Mid, Senior, etc.)
+- `mask_string_hash` - SHA-256 anonymization
+- `mask_string_partial` - First/last chars visible
+- `mask_id_deterministic` - Deterministic ID hash (preserves joins)
+- `mask_timestamp_round` - Round to 15-min intervals
+- `mask_gps_precision` - GPS to 2 decimal places (~1km)
+- `mask_serial_last4` - Serial number (last 4)
 
-**Tags:**
-- `pii_type` - Generic PII field types
-- `data_classification` - Data classification levels
-- `compliance_type` - Compliance requirements (PCI, HIPAA, GDPR, SOX)
-- `sensitivity_level` - Data sensitivity levels
+**Row Filter Functions (8):**
+- `filter_business_hours` - 9AM-5PM access
+- `filter_extended_hours` - 7AM-9PM access
+- `filter_maintenance_window` - 10PM-6AM access
+- `filter_high_value` - >$10K transactions
+- `filter_flagged_only` - Flagged records only
+- `filter_active_only` - Active status only
+- `filter_deny_all` - Block all access
+- `filter_allow_all` - Allow all access
 
-**ABAC Policies:** 6 policies (SSN, email, phone, credit card, account, ID)
+**Tag Policies (8):**
+- `pii_type` - 19 PII types (ssn, email, phone, name, dob, credit_card, medical_record, etc.)
+- `data_classification` - 5 levels (Public, Internal, Confidential, Restricted, Top_Secret)
+- `compliance_requirement` - 10 frameworks (PCI_DSS, HIPAA, GDPR, CCPA, SOX, GLBA, etc.)
+- `sensitivity_level` - 4 levels (Low, Medium, High, Critical)
+- `data_purpose` - 10 purposes (Operations, Analytics, Audit, HR, Marketing, etc.)
+- `access_restriction` - 7 types (Business_Hours, Region_Locked, Flagged_Only, etc.)
+- `retention_policy` - 7 periods (30_Days, 90_Days, 1_Year, 7_Years, etc.)
+- `geographic_scope` - 4 scopes (Country_Only, Region_Only, Cross_Border_Approved, Global)
+
+**ABAC Policies (15):**
+- 12 column mask policies (SSN, email, phone, name, credit_card, account, IP, DOB, amount, salary, device_id, timestamp)
+- 3 row filter policies (business hours, extended hours, maintenance window)
+
+**Test Data (5 tables):**
+- `users_test` - Customer PII (8 rows)
+- `transactions_test` - Financial transactions with fraud flags (10 rows)
+- `employees_test` - HR/Employee records with salary (10 rows)
+- `assets_test` - Inventory/Equipment with GPS (8 rows)
+- `audit_log_test` - System access logs (10 rows)
 
 ---
 

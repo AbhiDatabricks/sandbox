@@ -669,20 +669,17 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
                     gr.Markdown("### Industry Templates Available:")
                     gr.Markdown("""
                     **8 Industries:**
-                    - Default ⭐ (Selected by default)
-                    - Finance ✅ Complete
-                    - Insurance ✅ Complete
-                    - Healthcare ✅ Complete
-                    - Manufacturing ✅ Complete
-                    - Retail ✅ Complete
-                    - Telco ✅ Complete
-                    - Government ✅ Complete
+                    - **Default ⭐ SUPER-SET** (20 masks, 8 filters, 8 tags, 15 policies, 5 tables)
+                    - Finance
+                    - Insurance
+                    - Healthcare
+                    - Manufacturing
+                    - Retail
+                    - Telco
+                    - Government
                     
-                    **Each includes:**
-                    - Masking/filtering functions
-                    - Tag policy definitions
-                    - ABAC policies
-                    - Test data templates
+                    **Default is recommended** - contains ALL masking/filter types across industries.
+                    Other templates are industry-specific subsets with specialized naming.
                     """)
 
             gr.Markdown("---")
