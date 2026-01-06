@@ -284,11 +284,11 @@ END;
 -- NOTES:       Year preserved for age-based analytics; month/day hidden
 -- =============================================================================
 CREATE OR REPLACE FUNCTION mask_dob(dob DATE)
-RETURNS STRING
-COMMENT 'Mask DOB showing year only. Input: 1985-03-15 → Output: ****-**-** (1985). HIPAA Safe Harbor compliant.'
+RETURNS DATE
+COMMENT 'Mask DOB showing year only. Input: 1985-03-15 → Output: 1985-01-01. HIPAA Safe Harbor compliant. Returns DATE type for ABAC compatibility.'
 RETURN CASE
   WHEN dob IS NULL THEN NULL
-  ELSE CONCAT('****-**-** (', YEAR(dob), ')')
+  ELSE MAKE_DATE(YEAR(dob), 1, 1)
 END;
 
 -- =============================================================================
@@ -658,7 +658,7 @@ TAG_DEFINITIONS = [
     ("pii_type", "Type of personally identifiable information - drives automatic column masking", [
         # Identity PII
         "ssn",              # Social Security Number (US)
-        "name",             # Full name or partial name
+        "person_name",      # Full name or partial name (avoids SQL keyword 'name')
         "email",            # Email address
         "phone",            # Phone number
         "address",          # Physical address
@@ -904,17 +904,17 @@ ON COLUMN phone_col;
 -- =============================================================================
 -- POLICY 4: mask_name_policy
 -- =============================================================================
--- TRIGGER:     Column tagged with pii_type = 'name'
+-- TRIGGER:     Column tagged with pii_type = 'person_name'
 -- MASK:        mask_name() → 'J***'
 -- COMPLIANCE:  HIPAA Safe Harbor, GDPR pseudonymization
--- EXAMPLE:     ALTER TABLE patients ALTER COLUMN first_name SET TAGS ('pii_type' = 'name');
+-- EXAMPLE:     ALTER TABLE patients ALTER COLUMN first_name SET TAGS ('pii_type' = 'person_name');
 -- =============================================================================
 CREATE OR REPLACE POLICY mask_name_policy ON CATALOG {CATALOG}
-COMMENT 'Auto-mask name columns (pii_type=name). Shows first initial only.'
+COMMENT 'Auto-mask name columns (pii_type=person_name). Shows first initial only.'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_name
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('pii_type', 'name') AS name_col
+MATCH COLUMNS hasTagValue('pii_type', 'person_name') AS name_col
 ON COLUMN name_col;
 
 -- =============================================================================
@@ -1344,8 +1344,8 @@ TAG_APPLICATIONS_SQL = """
 ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN ssn SET TAGS ('pii_type' = 'ssn', 'data_classification' = 'Restricted', 'compliance_requirement' = 'GLBA');
 ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN email SET TAGS ('pii_type' = 'email', 'data_classification' = 'Confidential');
 ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN phone SET TAGS ('pii_type' = 'phone', 'data_classification' = 'Confidential');
-ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN first_name SET TAGS ('pii_type' = 'name', 'data_classification' = 'Internal');
-ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN last_name SET TAGS ('pii_type' = 'name', 'data_classification' = 'Internal');
+ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN first_name SET TAGS ('pii_type' = 'person_name', 'data_classification' = 'Internal');
+ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN last_name SET TAGS ('pii_type' = 'person_name', 'data_classification' = 'Internal');
 ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN date_of_birth SET TAGS ('pii_type' = 'dob', 'data_classification' = 'Confidential');
 ALTER TABLE {CATALOG}.{SCHEMA}.users_test ALTER COLUMN street_address SET TAGS ('pii_type' = 'address', 'data_classification' = 'Confidential');
 
@@ -1364,8 +1364,8 @@ ALTER TABLE {CATALOG}.{SCHEMA}.transactions_test ALTER COLUMN amount SET TAGS ('
 ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN ssn SET TAGS ('pii_type' = 'ssn', 'data_classification' = 'Restricted', 'data_purpose' = 'HR');
 ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN email SET TAGS ('pii_type' = 'email', 'data_classification' = 'Internal');
 ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN phone SET TAGS ('pii_type' = 'phone', 'data_classification' = 'Confidential');
-ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN first_name SET TAGS ('pii_type' = 'name', 'data_classification' = 'Internal');
-ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN last_name SET TAGS ('pii_type' = 'name', 'data_classification' = 'Internal');
+ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN first_name SET TAGS ('pii_type' = 'person_name', 'data_classification' = 'Internal');
+ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN last_name SET TAGS ('pii_type' = 'person_name', 'data_classification' = 'Internal');
 ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN date_of_birth SET TAGS ('pii_type' = 'dob', 'data_classification' = 'Confidential', 'data_purpose' = 'HR');
 ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN salary SET TAGS ('sensitivity_level' = 'High', 'data_purpose' = 'HR', 'data_classification' = 'Restricted');
 ALTER TABLE {CATALOG}.{SCHEMA}.employees_test ALTER COLUMN bonus SET TAGS ('sensitivity_level' = 'High', 'data_purpose' = 'HR', 'data_classification' = 'Restricted');
