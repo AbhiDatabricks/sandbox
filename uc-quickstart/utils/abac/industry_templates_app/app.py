@@ -590,14 +590,15 @@ with gr.Blocks(title="ABAC Industry Templates Deployer", theme=gr.themes.Soft())
             
             ### Workflow:
             **Required Steps:**
-            1. **Create Functions** - Deploy masking/filtering UDFs
-            2. **Create Tag Policies** - Define governed tags
-            3. **Create ABAC Policies** - Apply policies using tags
+            1. **Set Service Principal Permissions** - Grant privileges listed in 'Documentation' tab
+            2. **Create Functions** - Deploy masking/filtering UDFs
+            3. **Create Tag Policies** - Define governed tags
+            4. **Create ABAC Policies** - Apply policies using tags
             
-            **Optional Testing Steps:**
-            4. **Create Test Data** - Generate sample tables (with _test suffix)
-            5. **Tag Test Data** - Apply tags to test tables
-            6. **Test Policies** - Run queries to verify masking works
+            **Optional Testing Steps:**\n
+            5. **Create Test Data** - Generate sample tables (with _test suffix)\n
+            6. **Tag Test Data** - Apply tags to test tables\n
+            7. **Test Policies** - Run queries to verify masking works\n
             """)
 
             with gr.Row():

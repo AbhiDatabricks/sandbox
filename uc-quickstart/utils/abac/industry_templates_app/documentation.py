@@ -58,6 +58,11 @@ Before using this app, ensure you have:
 ✅ **SQL Warehouse** configured (app uses this for execution)  
 ✅ **Target catalog and schema** (or permission to create new schema) \n
 ✅ **Permissions** to grant the above priveleges to the app service principal
+  - grant use catalog on catalog CATALOG to `SP-ID`;
+  - grant use schema on schema CATALOG.SCHEMA to `SP-ID`;
+  - grant create function on schema CATALOG.SCHEMA to `SP-ID`;
+  - grant create table on schema CATALOG.SCHEMA to `SP-ID`;
+
 
 ### Quick Start (5 Minutes)
 
