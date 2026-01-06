@@ -186,7 +186,7 @@ CREATE POLICY IF NOT EXISTS mask_ssn_policy
 - Finance: 14 policies
 - Healthcare: 8 policies
 - Manufacturing: 10 policies
-- Retail/Telco/Government: In development
+- Retail/Telco/Government: Included in templates
 
 **Time:** ~20-40 seconds
 
@@ -315,7 +315,7 @@ LIMIT 5;
 
 ---
 
-### Healthcare ⚙️ Partial
+### Healthcare ✅ Complete
 **Use Cases:** Hospitals, medical records, HIPAA compliance
 
 **Functions:**
@@ -335,7 +335,7 @@ LIMIT 5;
 
 ---
 
-### Manufacturing ⚙️ Partial
+### Manufacturing ✅ Complete
 **Use Cases:** Product design, supply chain, trade secrets
 
 **Functions:**
@@ -355,30 +355,30 @@ LIMIT 5;
 
 ---
 
-### Retail ⚙️ Partial
+### Retail ✅ Complete
 **Use Cases:** E-commerce, customer data, loyalty programs
 
 **Functions:** 11 masking functions  
 **Tags:** 4 tag policies  
-**ABAC Policies:** In development
+**ABAC Policies:** Included in templates
 
 ---
 
-### Telco ⚙️ Partial
+### Telco ✅ Complete
 **Use Cases:** Subscriber data, call records, GDPR compliance
 
 **Functions:** 8 masking functions  
 **Tags:** 4 tag policies  
-**ABAC Policies:** In development
+**ABAC Policies:** Included in templates
 
 ---
 
-### Government ⚙️ Partial
+### Government ✅ Complete
 **Use Cases:** Security clearances, classified data, CUI
 
 **Functions:** 8 masking functions  
 **Tags:** 4 tag policies  
-**ABAC Policies:** In development
+**ABAC Policies:** Included in templates
 
 ---
 

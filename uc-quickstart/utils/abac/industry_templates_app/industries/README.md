@@ -25,9 +25,9 @@ TAG_DEFINITIONS = [
     ...
 ]
 
-# Required: Step 3 - ABAC policies
+# Required: Step 3 - ABAC policies (at Catalog level)
 ABAC_POLICIES_SQL = """
-CREATE POLICY IF NOT EXISTS xxx ON SCHEMA {SCHEMA}
+CREATE POLICY IF NOT EXISTS xxx ON CATALOG {CATALOG}
   COLUMN MASK {CATALOG}.{SCHEMA}.mask_xxx
   ...
 """
@@ -64,16 +64,14 @@ To add a new industry (e.g., Healthcare):
 
 ## Current Industries
 
-- **Finance** (`finance_template.py`) - Banking, credit cards, transactions
-
-## Coming Soon
-
-- Healthcare
-- Retail
-- Manufacturing
-- Government
-- Telco
-- Insurance
+- **Default** (`default_template.py`) ⭐ - Generic template for any industry (selected by default)
+- **Finance** (`finance_template.py`) ✅ - Banking, credit cards, transactions
+- **Insurance** (`insurance_template.py`) ✅ - Policies, claims, underwriting
+- **Healthcare** (`healthcare_template.py`) ✅ - Medical records, HIPAA compliance
+- **Manufacturing** (`manufacturing_template.py`) ✅ - Supply chain, IP protection
+- **Retail** (`retail_template.py`) ✅ - E-commerce, customer data
+- **Telco** (`telco_template.py`) ✅ - Subscriber data, call records
+- **Government** (`government_template.py`) ✅ - Security clearances, CUI
 
 ## Notes
 

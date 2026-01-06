@@ -102,10 +102,10 @@ TAG_DEFINITIONS = [
      ["Low", "Medium", "High", "Critical"])
 ]
 
-# Step 3: ABAC Policy Definitions
+# Step 3: ABAC Policy Definitions (at Catalog level)
 ABAC_POLICIES_SQL = """
--- SSN Column Mask Policy
-CREATE OR REPLACE POLICY ssn_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- SSN Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY ssn_mask ON CATALOG {CATALOG}
 COMMENT 'Mask SSN columns tagged with pii_type=ssn'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_ssn_last4 
 TO `account users`
@@ -114,8 +114,8 @@ MATCH COLUMNS
   hasTagValue('pii_type','ssn') AS ssn
 ON COLUMN ssn;
 
--- Email Column Mask Policy
-CREATE OR REPLACE POLICY email_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Email Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY email_mask ON CATALOG {CATALOG}
 COMMENT 'Mask email columns tagged with pii_type=email'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_email 
 TO `account users`
@@ -124,8 +124,8 @@ MATCH COLUMNS
   hasTagValue('pii_type','email') AS email
 ON COLUMN email;
 
--- Phone Column Mask Policy
-CREATE OR REPLACE POLICY phone_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Phone Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY phone_mask ON CATALOG {CATALOG}
 COMMENT 'Mask phone columns tagged with pii_type=phone'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone 
 TO `account users`
@@ -134,8 +134,8 @@ MATCH COLUMNS
   hasTagValue('pii_type','phone') AS phone
 ON COLUMN phone;
 
--- Credit Card Column Mask Policy
-CREATE OR REPLACE POLICY card_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Credit Card Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY card_mask ON CATALOG {CATALOG}
 COMMENT 'Mask credit card columns tagged with pii_type=credit_card'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_credit_card 
 TO `account users`
@@ -144,8 +144,8 @@ MATCH COLUMNS
   hasTagValue('pii_type','credit_card') AS card
 ON COLUMN card;
 
--- Account Number Column Mask Policy
-CREATE OR REPLACE POLICY account_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- Account Number Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY account_mask ON CATALOG {CATALOG}
 COMMENT 'Mask account columns tagged with pii_type=account'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_account_last4 
 TO `account users`
@@ -154,8 +154,8 @@ MATCH COLUMNS
   hasTagValue('pii_type','account') AS account
 ON COLUMN account;
 
--- ID Hash Column Mask Policy
-CREATE OR REPLACE POLICY id_mask ON SCHEMA {CATALOG}.{SCHEMA}
+-- ID Hash Column Mask Policy (Catalog Level)
+CREATE OR REPLACE POLICY id_mask ON CATALOG {CATALOG}
 COMMENT 'Hash ID columns tagged with pii_type=id'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_id_hash 
 TO `account users`

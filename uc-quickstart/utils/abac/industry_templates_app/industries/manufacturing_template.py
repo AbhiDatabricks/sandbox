@@ -127,82 +127,106 @@ TAG_DEFINITIONS = [
 
 ABAC_POLICIES_SQL = """
 
--- POLICY 1: CAD references hashed for regular users
+-- Step 3: ABAC Policy Definitions (recommended: Catalog level)
+-- Note: If you prefer schema-scoped policies, change `ON CATALOG {CATALOG}` to `ON SCHEMA {CATALOG}.{SCHEMA}`.
+
+-- POLICY 1: IP protection - Specs redacted for regular users
+CREATE OR REPLACE POLICY mfg_ip_protection_specs
+ON CATALOG {CATALOG}
+COMMENT 'Redact specification text for regular users'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_spec_text
+TO `account users`
+FOR TABLES
+MATCH COLUMNS hasTagValue('ip_sensitivity_manufacturing','Trade_Secret')
+  AND hasTagValue('sensitive_type_manufacturing','specification') AS spec_cols
+ON COLUMN spec_cols;
+
+-- POLICY 2: IP protection - CAD references hashed for regular users
 CREATE OR REPLACE POLICY mfg_ip_protection_cad
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Hash CAD/PLM file references for regular users'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_cad_reference
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('ip_sensitivity_manufacturing','Trade_Secret') AND hasTagValue('sensitive_type_manufacturing','CAD') AS cad_cols
+MATCH COLUMNS hasTagValue('ip_sensitivity_manufacturing','Trade_Secret')
+  AND hasTagValue('sensitive_type_manufacturing','CAD') AS cad_cols
 ON COLUMN cad_cols;
 
--- POLICY 2: Serial numbers - last 4 only for regular users
+-- POLICY 3: Serial numbers - last 4 only for regular users
 CREATE OR REPLACE POLICY mfg_serial_masking
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Show only last 4 characters of serial numbers for regular users'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_serial_last4
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('asset_criticality_manufacturing','Medium') AND hasTagValue('sensitive_type_manufacturing','serial_number') AS serial_cols
+MATCH COLUMNS hasTagValue('sensitive_type_manufacturing','serial_number') AS serial_cols
 ON COLUMN serial_cols;
 
--- POLICY 3: GPS precision reduction for regular users
+-- POLICY 4: GPS precision reduction for regular users
 CREATE OR REPLACE POLICY mfg_gps_precision
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Reduce GPS precision for regular users'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_gps_precision
 TO `account users`
 FOR TABLES
 MATCH COLUMNS hasTagValue('sensitive_type_manufacturing','gps') AS gps_cols
 ON COLUMN gps_cols;
 
--- POLICY 4: Cost bucketing for regular users
+-- POLICY 5: Cost bucketing for regular users
 CREATE OR REPLACE POLICY mfg_cost_bucketing
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Show cost ranges (Low/Medium/High) instead of exact amounts for regular users'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_cost_bucket
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('data_purpose_manufacturing','SupplyChain') AND hasTagValue('sensitive_type_manufacturing','cost') AS cost_cols
+MATCH COLUMNS hasTagValue('sensitive_type_manufacturing','cost') AS cost_cols
 ON COLUMN cost_cols;
 
--- POLICY 5: Supplier name hashing for privacy
+-- POLICY 6: Supplier name hashing for privacy
 CREATE OR REPLACE POLICY mfg_supplier_privacy
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Hash supplier names for regular users to protect commercial relationships'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_string_hash
 TO `account users`
 FOR TABLES
-MATCH COLUMNS 
-    hasTagValue('data_purpose_manufacturing','Audit') AND hasTagValue('sensitive_type_manufacturing','name') AS supplier_cols
+MATCH COLUMNS hasTagValue('supplier_scope_manufacturing','Named_Supplier_Only')
+  AND hasTagValue('sensitive_type_manufacturing','name') AS supplier_cols
 ON COLUMN supplier_cols;
 
--- POLICY 6: Email masking
+-- POLICY 7: Email masking
 CREATE OR REPLACE POLICY mfg_email_privacy
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Mask email addresses for regular users'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_email
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('ip_sensitivity_manufacturing','Internal') AND hasTagValue('sensitive_type_manufacturing','email') AS email_cols
+MATCH COLUMNS hasTagValue('sensitive_type_manufacturing','email') AS email_cols
 ON COLUMN email_cols;
 
--- POLICY 7: Phone number masking
+-- POLICY 8: Phone number masking
 CREATE OR REPLACE POLICY mfg_phone_privacy
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Mask phone numbers for regular users'
 COLUMN MASK {CATALOG}.{SCHEMA}.mask_phone
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('ip_sensitivity_manufacturing','Internal') AND hasTagValue('sensitive_type_manufacturing','phone') AS phone_cols
+MATCH COLUMNS hasTagValue('sensitive_type_manufacturing','phone') AS phone_cols
 ON COLUMN phone_cols;
 
--- POLICY 8: Specification text redaction
-CREATE OR REPLACE POLICY mfg_ip_protection_specs
-ON SCHEMA {CATALOG}.{SCHEMA}
-COLUMN MASK {CATALOG}.{SCHEMA}.mask_spec_text
+-- POLICY 9: Timestamp rounding for regular users
+CREATE OR REPLACE POLICY mfg_timestamp_rounding
+ON CATALOG {CATALOG}
+COMMENT 'Floor timestamps to 15-minute intervals for regular users'
+COLUMN MASK {CATALOG}.{SCHEMA}.mask_timestamp_15min
 TO `account users`
 FOR TABLES
-MATCH COLUMNS hasTagValue('ip_sensitivity_manufacturing','Trade_Secret') AND hasTagValue('sensitive_type_manufacturing','specification') AS ip_cols
-ON COLUMN ip_cols;
+MATCH COLUMNS hasTagValue('sensitive_type_manufacturing','ts') AS ts_cols
+ON COLUMN ts_cols;
 
--- POLICY 9: Business hours filter
+-- POLICY 10: Business hours filter (row filter)
 CREATE OR REPLACE POLICY mfg_business_hours_access
-ON SCHEMA {CATALOG}.{SCHEMA}
+ON CATALOG {CATALOG}
+COMMENT 'Restrict sensitive data to business hours for Day shift'
 ROW FILTER {CATALOG}.{SCHEMA}.business_hours_filter
 TO `account users`
 FOR TABLES
