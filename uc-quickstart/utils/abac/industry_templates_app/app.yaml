@@ -6,3 +6,5 @@ env:
     value: "0.0.0.0"
   - name: GRADIO_SERVER_PORT
     value: "8000"
+  - name: WAREHOUSE_ID
+    value: "<warehouse-id>"
