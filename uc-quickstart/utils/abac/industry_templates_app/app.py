@@ -124,7 +124,7 @@ def check_test_tables_exist(catalog, schema):
     try:
         data = execute_sql(f"SHOW TABLES IN {catalog}.{schema}")
         if len(data) > 1:
-            tables = [row[1] for row in data[1:]]  # Second column is table name
+            tables = [row[1] for row in data[0:]]  # Second column is table name
             test_tables = [t for t in tables if t.endswith('_test')]
             return len(test_tables) > 0, test_tables
         return False, []
